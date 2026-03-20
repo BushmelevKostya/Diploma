@@ -1,0 +1,42 @@
+name: Commitlint
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install commitlint
+        run: npm install @commitlint/cli @commitlint/config-conventional
+
+      - name: Create commitlint config
+        run: |
+          cat > commitlint.config.js << 'EOF'
+          module.exports = {
+            extends: ['@commitlint/config-conventional'],
+            rules: {
+              'type-enum': [2, 'always', [
+                'feat', 'fix', 'docs', 'style', 'refactor',
+                'test', 'ci', 'chore', 'revert', 'init',
+              ]],
+              'scope-enum': [1, 'always', [
+                'tofu', 'ansible', 'k8s', 'ci', 'scripts', 'docs', 'config',
+              ]],
+              'subject-case': [2, 'always', 'lower-case'],
+              'header-max-length': [2, 'always', 72],
+            },
+          };
+          EOF
+
+      - name: Validate PR commits
+        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
