@@ -37,3 +37,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+data.txt
+tofu/.terraform/
+tofu/.terraform.lock.hcl
+*.tfstate.backup
