@@ -1,49 +1,24 @@
 variable "name" {
-  description = "Имя виртуальной машины"
-  type        = string
+  type = string
 }
-
 variable "vcpu" {
-  description = "Количество виртуальных CPU"
-  type        = number
-  default     = 2
+  type = number
 }
-
 variable "memory" {
-  description = "Объём оперативной памяти (МБ)"
-  type        = number
-  default     = 2048
+  type = number
 }
-
 variable "disk_size_gb" {
-  description = "Размер диска (ГБ)"
-  type        = number
-  default     = 20
+  type = number
 }
-
-variable "base_image_id" {
-  description = "ID базового образа (libvirt_volume)"
-  type        = string
+variable "base_image_path" {
+  type = string
 }
-
-variable "network_id" {
-  description = "ID сети libvirt"
-  type        = string
+variable "network_name" {
+  type = string
 }
-
 variable "storage_pool" {
-  description = "Имя storage pool"
-  type        = string
-  default     = "default"
+  type = string
 }
-
-variable "user_data" {
-  description = "Cloud-init user-data (YAML-строка)"
-  type        = string
-  default     = ""
-}
-
 variable "ssh_public_key" {
-  description = "Публичный SSH-ключ для доступа к ВМ"
-  type        = string
+  type = string
 }
