@@ -41,3 +41,7 @@ data.txt
 tofu/.terraform/
 tofu/.terraform.lock.hcl
 *.tfstate.backup
+
+.github/copilot-instructions.md
+**/SKILL.md
+**/skill.md

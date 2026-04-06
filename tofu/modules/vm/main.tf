@@ -7,22 +7,32 @@ terraform {
   }
 }
 
-# Cloud-init ISO
 resource "libvirt_cloudinit_disk" "init" {
   name = "${var.name}-cloudinit.iso"
 
-  user_data = templatefile("${path.module}/templates/cloud-init.yml.tftpl", {
-    hostname       = var.name
-    ssh_public_key = var.ssh_public_key
-  })
+  user_data = <<-EOF
+    #cloud-config
+    hostname: ${var.name}
+    ssh_authorized_keys:
+      - ${var.ssh_public_key}
+    growpart:
+      mode: auto
+    resize_rootfs: true
+  EOF
 
-  meta_data = yamlencode({
-    "instance-id"    = var.name
-    "local-hostname" = var.name
-  })
+  network_config = <<-EOF
+    version: 2
+    ethernets:
+      ens3:
+        dhcp4: true
+  EOF
+
+  meta_data = <<-EOF
+    instance-id: ${var.name}
+    local-hostname: ${var.name}
+  EOF
 }
 
-# Upload cloud-init ISO to pool
 resource "libvirt_volume" "cloudinit" {
   name = "${var.name}-cloudinit.iso"
   pool = var.storage_pool
@@ -34,103 +44,90 @@ resource "libvirt_volume" "cloudinit" {
   }
 }
 
-# COW disk
 resource "libvirt_volume" "disk" {
-  name          = "${var.name}-disk.qcow2"
-  pool          = var.storage_pool
-  capacity      = var.disk_size_gb * 1024 * 1024 * 1024
-  capacity_unit = "bytes"
-
+  name     = "${var.name}-disk.qcow2"
+  pool     = var.storage_pool
+  capacity = var.disk_size_gb * 1024 * 1024 * 1024
+  target = {
+    permissions = {
+      mode = "666"
+    }
+    format = {
+      type = "qcow2"
+    }
+  }
   backing_store = {
     path = var.base_image_path
     format = {
       type = "qcow2"
     }
   }
-
-  target = {
-    format = {
-      type = "qcow2"
-    }
-  }
 }
 
-# VM
 resource "libvirt_domain" "vm" {
   name    = var.name
-  type    = "kvm"
   memory  = var.memory
   vcpu    = var.vcpu
   running = true
+  type    = "kvm"
 
   os = {
-    type      = "hvm"
-    type_arch = "x86_64"
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
   }
 
   devices = {
     disks = [
       {
         source = {
-          file = {
-            file = libvirt_volume.disk.path
+          volume = {
+            pool   = libvirt_volume.disk.pool
+            volume = libvirt_volume.disk.name
           }
         }
         target = {
-          dev = "vda"
           bus = "virtio"
+          dev = "vda"
         }
         driver = {
-          name = "qemu"
           type = "qcow2"
         }
       },
       {
         device = "cdrom"
         source = {
-          file = {
-            file = libvirt_volume.cloudinit.path
+          volume = {
+            pool   = libvirt_volume.cloudinit.pool
+            volume = libvirt_volume.cloudinit.name
           }
         }
         target = {
-          dev = "sda"
           bus = "sata"
-        }
-        driver = {
-          name = "qemu"
-          type = "raw"
+          dev = "sda"
         }
       }
     ]
 
     interfaces = [
       {
+        type = "network"
+        model = {
+          type = "virtio"
+        }
         source = {
           network = {
             network = var.network_name
           }
-        }
-        model = {
-          type = "virtio"
         }
       }
     ]
 
     consoles = [
       {
-        target = {
-          type = "serial"
-          port = 0
-        }
-      }
-    ]
-
-    graphics = [
-      {
-        vnc = {
-          auto_port = true
-          listen    = "0.0.0.0"
-        }
+        type        = "pty"
+        target_port = "0"
+        target_type = "serial"
       }
     ]
   }
