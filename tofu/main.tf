@@ -9,14 +9,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "tofu-state"
-    key    = "workstation/terraform.tfstate"
-    region = "us-east-1"
-
-    endpoints = {
-      s3 = "http://localhost:9000"
-    }
-
+    bucket                      = "tofu-state"
+    key                         = "workstation/terraform.tfstate"
+    region                      = "us-east-1"
+    endpoints                   = { s3 = "http://localhost:9000" }
     access_key                  = "minioadmin"
     secret_key                  = "minioadmin"
     skip_credentials_validation = true
@@ -27,20 +23,23 @@ terraform {
   }
 }
 
+variable "base_image_path" {
+  type        = string
+  default     = "/var/lib/libvirt/images/ubuntu-base.qcow2"
+  description = "Path to pre-downloaded Ubuntu cloud image on the libvirt host"
+}
+
+variable "storage_pool_name" {
+  type    = string
+  default = "default"
+}
+
 provider "libvirt" {
-  uri = "qemu+ssh://root@144.31.219.63/system"
+  uri = "qemu+ssh://root@89.104.68.81/system"
 }
 
-resource "libvirt_volume" "ubuntu" {
-  name = "ubuntu-base.qcow2"
-  pool = var.storage_pool_name
-
-  create = {
-    content = {
-      url = var.base_image_url
-    }
-  }
-}
+# Base image is pre-downloaded to host once to avoid slow download during apply.
+# The host copy lives at /var/lib/libvirt/images/ubuntu-base.qcow2.
 
 module "vm1" {
   source          = "./modules/vm"
@@ -48,18 +47,12 @@ module "vm1" {
   vcpu            = 1
   memory          = 1024
   disk_size_gb    = 10
-  base_image_path = libvirt_volume.ubuntu.path
+  base_image_path = var.base_image_path
   network_name    = "default"
   storage_pool    = var.storage_pool_name
   ssh_public_key  = file("${path.module}/id_rsa.pub")
 }
 
-variable "base_image_url" {
-  type    = string
-  default = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
-}
-
-variable "storage_pool_name" {
-  type    = string
-  default = "default"
+output "vm1_ip" {
+  value = module.vm1.ip
 }
