@@ -3,5 +3,6 @@ output "vm_name" {
 }
 
 output "ip" {
-  value = null
+  value       = "pending"
+  description = "IPv4 address - will be populated after ВМ gets DHCP lease. Use get-vm-ip.sh to fetch."
 }

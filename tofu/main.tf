@@ -45,7 +45,7 @@ module "vm1" {
   source          = "./modules/vm"
   name            = "vm1"
   vcpu            = 1
-  memory          = 1024
+  memory          = 1048576
   disk_size_gb    = 10
   base_image_path = var.base_image_path
   network_name    = "default"

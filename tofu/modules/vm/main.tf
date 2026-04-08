@@ -11,26 +11,51 @@ resource "libvirt_cloudinit_disk" "init" {
   name = "${var.name}-cloudinit.iso"
 
   user_data = <<-EOF
-    #cloud-config
-    hostname: ${var.name}
+#cloud-config
+hostname: ${var.name}
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: false
+    plain_text_passwd: temppass123
     ssh_authorized_keys:
       - ${var.ssh_public_key}
-    growpart:
-      mode: auto
-    resize_rootfs: true
-  EOF
+disable_root: false
+ssh_authorized_keys:
+  - ${var.ssh_public_key}
+ssh_pwauth: false
+growpart:
+  mode: auto
+resize_rootfs: true
+
+apt:
+  primary:
+    - arches: [default]
+      uri: http://mirror.yandex.ru/ubuntu
+  security:
+    - arches: [default]
+      uri: http://mirror.yandex.ru/ubuntu
+
+write_files:
+  - path: /etc/apt/apt.conf.d/99force-ipv4
+    content: |
+      Acquire::ForceIPv4 "true";
+EOF
 
   network_config = <<-EOF
-    version: 2
-    ethernets:
-      ens3:
-        dhcp4: true
-  EOF
+version: 2
+ethernets:
+  nic0:
+    match:
+      name: "en*"
+    dhcp4: true
+EOF
 
   meta_data = <<-EOF
-    instance-id: ${var.name}
-    local-hostname: ${var.name}
-  EOF
+instance-id: ${var.name}
+local-hostname: ${var.name}
+EOF
 }
 
 resource "libvirt_volume" "cloudinit" {
@@ -70,6 +95,11 @@ resource "libvirt_domain" "vm" {
   vcpu    = var.vcpu
   running = true
   type    = "kvm"
+
+  features = {
+    acpi = true
+    apic = {}
+  }
 
   os = {
     type         = "hvm"
