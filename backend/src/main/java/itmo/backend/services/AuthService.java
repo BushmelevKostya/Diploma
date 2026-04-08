@@ -6,7 +6,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import itmo.backend.model.dto.auth.JwtResponse;
 import itmo.backend.model.dto.auth.LoginRequest;
 import itmo.backend.model.dto.auth.RefreshTokenRequest;
+import itmo.backend.model.dto.auth.RegisterRequest;
 import itmo.backend.model.entity.User;
+import itmo.backend.model.entity.UserRole;
 import itmo.backend.model.repository.UserRepository;
 import itmo.backend.model.exceptions.ApiException;
 
@@ -56,6 +58,25 @@ public class AuthService {
 			.orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "User not found for token"));
 
 		final String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
+		return new JwtResponse(accessToken, refreshToken, "Bearer", 3600L);
+	}
+
+	public JwtResponse register(final RegisterRequest request) {
+		if (userRepository.findByUsername(request.username()).isPresent()) {
+			throw new ApiException(HttpStatus.CONFLICT, "Username already exists");
+		}
+
+		final String hashedPassword = passwordEncoder.encode(request.password());
+		final User newUser = new User(
+			request.username(),
+			hashedPassword,
+			UserRole.OPERATOR
+		);
+
+		final User savedUser = userRepository.save(newUser);
+
+		final String accessToken = jwtService.generateAccessToken(savedUser.getUsername(), savedUser.getRole().name());
+		final String refreshToken = jwtService.generateRefreshToken(savedUser.getUsername());
 		return new JwtResponse(accessToken, refreshToken, "Bearer", 3600L);
 	}
 }

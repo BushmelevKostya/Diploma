@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 import itmo.backend.model.dto.auth.JwtResponse;
 import itmo.backend.model.dto.auth.LoginRequest;
 import itmo.backend.model.dto.auth.RefreshTokenRequest;
+import itmo.backend.model.dto.auth.RegisterRequest;
 import itmo.backend.services.AuthService;
 
 @RestController
@@ -28,5 +29,10 @@ public class AuthController {
     @PostMapping("/refresh")
     public JwtResponse refresh(@Valid @RequestBody final RefreshTokenRequest request) {
         return authService.refresh(request);
+    }
+
+    @PostMapping("/register")
+    public JwtResponse register(@Valid @RequestBody final RegisterRequest request) {
+        return authService.register(request);
     }
 }
