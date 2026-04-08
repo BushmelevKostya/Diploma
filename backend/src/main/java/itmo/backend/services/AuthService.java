@@ -17,10 +17,14 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
 	private final JwtService jwtService;
 
-    public AuthService(final UserRepository userRepository, final PasswordEncoder passwordEncoder) {
+	public AuthService(
+		final UserRepository userRepository,
+		final PasswordEncoder passwordEncoder,
+		final JwtService jwtService
+	) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-	    this.jwtService = jwtService;
+		this.jwtService = jwtService;
     }
 
     public JwtResponse login(final LoginRequest request) {
@@ -31,8 +35,8 @@ public class AuthService {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
 
-	    final String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
-	    final String refreshToken = jwtService.generateRefreshToken(user.getUsername());
+		final String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
+		final String refreshToken = jwtService.generateRefreshToken(user.getUsername());
         return new JwtResponse(accessToken, refreshToken, "Bearer", 3600L);
     }
 
@@ -49,7 +53,7 @@ public class AuthService {
 
 		final String username = jwtService.extractUsername(refreshToken);
 		final User user = userRepository.findByUsername(username)
-				.orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "User not found for token"));
+			.orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "User not found for token"));
 
 		final String accessToken = jwtService.generateAccessToken(user.getUsername(), user.getRole().name());
 		return new JwtResponse(accessToken, refreshToken, "Bearer", 3600L);

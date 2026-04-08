@@ -48,6 +48,11 @@ public class JwtService {
     return claims.get("type", String.class);
   }
 
+  public String extractRole(final String token) {
+    final Claims claims = parseClaims(token);
+    return claims.get("role", String.class);
+  }
+
   public boolean isTokenValid(final String token) {
     try {
       parseClaims(token);
