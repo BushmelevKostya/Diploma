@@ -1,0 +1,29 @@
+---
+- name: Test connectivity and basic setup
+  hosts: k3s_master
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Print hostname
+      ansible.builtin.debug:
+        msg: "Hostname: {{ ansible_hostname }}"
+
+    - name: Print OS version
+      ansible.builtin.debug:
+        msg: "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Check uptime
+      ansible.builtin.command: uptime
+      changed_when: false
+      register: uptime_result
+
+    - name: Show uptime
+      ansible.builtin.debug:
+        msg: "{{ uptime_result.stdout }}"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+        lock_timeout: 300
