@@ -30,7 +30,7 @@ jobs:
                 'test', 'ci', 'chore', 'revert', 'init',
               ]],
               'scope-enum': [1, 'always', [
-                'tofu', 'ansible', 'k8s', 'ci', 'scripts', 'docs', 'config',
+                'tofu', 'ansible', 'k8s', 'ci', 'scripts', 'docs', 'config', 'back', 'front',
               ]],
               'subject-case': [2, 'always', 'lower-case'],
               'header-max-length': [2, 'always', 72],

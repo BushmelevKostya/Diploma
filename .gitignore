@@ -29,6 +29,7 @@ kubeconfig.*
 *.swp
 *.swo
 *~
+backend/target
 
 .DS_Store
 Thumbs.db
@@ -45,3 +46,5 @@ tofu/.terraform.lock.hcl
 .github/copilot-instructions.md
 **/SKILL.md
 **/skill.md
+res.txt
+tofu/id_rsa.pub
