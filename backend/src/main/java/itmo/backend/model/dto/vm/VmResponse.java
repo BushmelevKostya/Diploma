@@ -7,11 +7,15 @@ import java.util.UUID;
 public record VmResponse(
     UUID id,
     String name,
+    String hostname,
     String ipAddress,
-    VmStatus status,
-    Integer cpuCores,
+    Integer vcpu,
     Integer memoryMb,
-    Integer diskGb,
-    Instant createdAt
+    Integer diskSizeGb,
+    String osImage,
+    VmStatus status,
+    UUID createdBy,
+    Instant createdAt,
+    Instant updatedAt
 ) {
 }
