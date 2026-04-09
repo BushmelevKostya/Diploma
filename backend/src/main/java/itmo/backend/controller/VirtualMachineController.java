@@ -1,10 +1,14 @@
 package itmo.backend.controller;
 
 import itmo.backend.model.dto.vm.CreateVmRequest;
+import itmo.backend.model.dto.vm.MetricResponse;
+import itmo.backend.model.dto.vm.MetricType;
 import itmo.backend.model.dto.vm.UpdateVmRequest;
 import itmo.backend.model.dto.vm.VmResponse;
 import itmo.backend.services.VirtualMachineService;
 import jakarta.validation.Valid;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -71,5 +75,15 @@ public class VirtualMachineController {
     @PostMapping("/{id}/stop")
     public VmResponse stop(@PathVariable final UUID id) {
         return virtualMachineService.stop(id);
+    }
+
+    @GetMapping("/{id}/metrics")
+    public List<MetricResponse> metrics(
+        @PathVariable final UUID id,
+        @RequestParam(required = false) final MetricType type,
+        @RequestParam(required = false) final Instant from,
+        @RequestParam(required = false) final Instant to
+    ) {
+        return virtualMachineService.getMetrics(id, type);
     }
 }
