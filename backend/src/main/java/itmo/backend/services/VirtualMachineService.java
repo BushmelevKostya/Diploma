@@ -1,6 +1,7 @@
 package itmo.backend.services;
 
 import itmo.backend.model.dto.vm.CreateVmRequest;
+import itmo.backend.model.dto.vm.UpdateVmRequest;
 import itmo.backend.model.dto.vm.VmResponse;
 import itmo.backend.model.entity.VirtualMachine;
 import itmo.backend.model.entity.VmStatus;
@@ -26,13 +27,20 @@ public class VirtualMachineService {
             throw new ApiException(HttpStatus.CONFLICT, "VM with this name already exists");
         }
 
+        final String hostname = request.hostname() == null || request.hostname().isBlank()
+            ? request.name()
+            : request.hostname();
+
         final VirtualMachine vm = new VirtualMachine(
             request.name(),
+            hostname,
             null,
             VmStatus.STOPPED,
-            request.cpuCores(),
+            request.vcpu(),
             request.memoryMb(),
-            request.diskGb()
+            request.diskSizeGb(),
+            request.osImage(),
+            null
         );
 
         final VirtualMachine saved = virtualMachineRepository.save(vm);
@@ -50,16 +58,36 @@ public class VirtualMachineService {
         return toResponse(vm);
     }
 
+    public VmResponse update(final UUID id, final UpdateVmRequest request) {
+        final VirtualMachine vm = virtualMachineRepository.findById(id)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VM not found"));
+
+        vm.update(request.hostname(), request.vcpu(), request.memoryMb());
+        final VirtualMachine saved = virtualMachineRepository.save(vm);
+        return toResponse(saved);
+    }
+
+    public void delete(final UUID id) {
+        final VirtualMachine vm = virtualMachineRepository.findById(id)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VM not found"));
+
+        virtualMachineRepository.delete(vm);
+    }
+
     private VmResponse toResponse(final VirtualMachine vm) {
         return new VmResponse(
             vm.getId(),
             vm.getName(),
+            vm.getHostname(),
             vm.getIpAddress(),
-            vm.getStatus(),
-            vm.getCpuCores(),
+            vm.getVcpu(),
             vm.getMemoryMb(),
-            vm.getDiskGb(),
-            vm.getCreatedAt()
+            vm.getDiskSizeGb(),
+            vm.getOsImage(),
+            vm.getStatus(),
+            vm.getCreatedBy(),
+            vm.getCreatedAt(),
+            vm.getUpdatedAt()
         );
     }
 }
