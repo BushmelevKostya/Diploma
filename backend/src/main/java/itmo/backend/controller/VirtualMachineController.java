@@ -62,4 +62,14 @@ public class VirtualMachineController {
     public void delete(@PathVariable final UUID id) {
         virtualMachineService.delete(id);
     }
+
+    @PostMapping("/{id}/start")
+    public VmResponse start(@PathVariable final UUID id) {
+        return virtualMachineService.start(id);
+    }
+
+    @PostMapping("/{id}/stop")
+    public VmResponse stop(@PathVariable final UUID id) {
+        return virtualMachineService.stop(id);
+    }
 }

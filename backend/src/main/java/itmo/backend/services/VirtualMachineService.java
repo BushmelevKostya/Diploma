@@ -74,6 +74,30 @@ public class VirtualMachineService {
         virtualMachineRepository.delete(vm);
     }
 
+    public VmResponse start(final UUID id) {
+        final VirtualMachine vm = virtualMachineRepository.findById(id)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VM not found"));
+
+        if (vm.getStatus() == VmStatus.RUNNING) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "VM is already running");
+        }
+
+        vm.start();
+        return toResponse(virtualMachineRepository.save(vm));
+    }
+
+    public VmResponse stop(final UUID id) {
+        final VirtualMachine vm = virtualMachineRepository.findById(id)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VM not found"));
+
+        if (vm.getStatus() == VmStatus.STOPPED) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "VM is already stopped");
+        }
+
+        vm.stop();
+        return toResponse(virtualMachineRepository.save(vm));
+    }
+
     private VmResponse toResponse(final VirtualMachine vm) {
         return new VmResponse(
             vm.getId(),
