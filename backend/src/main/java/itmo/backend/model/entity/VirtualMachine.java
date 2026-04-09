@@ -150,4 +150,12 @@ public class VirtualMachine {
             this.memoryMb = memoryMb;
         }
     }
+
+    public void start() {
+        this.status = VmStatus.RUNNING;
+    }
+
+    public void stop() {
+        this.status = VmStatus.STOPPED;
+    }
 }
