@@ -1,12 +1,16 @@
 package itmo.backend.services;
 
 import itmo.backend.model.dto.vm.CreateVmRequest;
+import itmo.backend.model.dto.vm.MetricResponse;
+import itmo.backend.model.dto.vm.MetricType;
 import itmo.backend.model.dto.vm.UpdateVmRequest;
 import itmo.backend.model.dto.vm.VmResponse;
 import itmo.backend.model.entity.VirtualMachine;
 import itmo.backend.model.entity.VmStatus;
 import itmo.backend.model.exceptions.ApiException;
 import itmo.backend.model.repository.VirtualMachineRepository;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -98,6 +102,26 @@ public class VirtualMachineService {
         return toResponse(virtualMachineRepository.save(vm));
     }
 
+    public List<MetricResponse> getMetrics(final UUID id, final MetricType type) {
+        final VirtualMachine vm = virtualMachineRepository.findById(id)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VM not found"));
+
+        final List<MetricResponse> metrics = List.of(
+            metric(vm, MetricType.CPU, cpuValue(vm), "%"),
+            metric(vm, MetricType.MEMORY, memoryValue(vm), "MB"),
+            metric(vm, MetricType.DISK, diskValue(vm), "GB"),
+            metric(vm, MetricType.NETWORK, networkValue(vm), "Mbps")
+        );
+
+        if (type == null) {
+            return metrics;
+        }
+
+        return metrics.stream()
+            .filter(metric -> metric.metricType() == type)
+            .toList();
+    }
+
     private VmResponse toResponse(final VirtualMachine vm) {
         return new VmResponse(
             vm.getId(),
@@ -113,5 +137,42 @@ public class VirtualMachineService {
             vm.getCreatedAt(),
             vm.getUpdatedAt()
         );
+    }
+
+    private MetricResponse metric(
+        final VirtualMachine vm,
+        final MetricType metricType,
+        final Double value,
+        final String unit
+    ) {
+        return new MetricResponse(
+            UUID.randomUUID(),
+            vm.getId(),
+            vm.getName(),
+            metricType,
+            value,
+            unit,
+            Instant.now()
+        );
+    }
+
+    private Double cpuValue(final VirtualMachine vm) {
+        if (vm.getStatus() == VmStatus.STOPPED) {
+            return 0.0;
+        }
+
+        return Math.min(100.0, vm.getVcpu() * 12.5);
+    }
+
+    private Double memoryValue(final VirtualMachine vm) {
+        return vm.getStatus() == VmStatus.STOPPED ? 0.0 : vm.getMemoryMb().doubleValue();
+    }
+
+    private Double diskValue(final VirtualMachine vm) {
+        return vm.getDiskSizeGb().doubleValue();
+    }
+
+    private Double networkValue(final VirtualMachine vm) {
+        return vm.getStatus() == VmStatus.RUNNING ? 12.0 : 0.0;
     }
 }
