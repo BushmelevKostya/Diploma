@@ -1,29 +1,37 @@
 ---
-- name: Test connectivity and basic setup
-  hosts: k3s_master
+- name: Configure base Ubuntu VM
+  hosts: managed_vms
   become: true
   gather_facts: true
 
   tasks:
-    - name: Print hostname
-      ansible.builtin.debug:
-        msg: "Hostname: {{ ansible_hostname }}"
-
-    - name: Print OS version
-      ansible.builtin.debug:
-        msg: "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
-
-    - name: Check uptime
-      ansible.builtin.command: uptime
-      changed_when: false
-      register: uptime_result
-
-    - name: Show uptime
-      ansible.builtin.debug:
-        msg: "{{ uptime_result.stdout }}"
-
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 3600
         lock_timeout: 300
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - qemu-guest-agent
+          - curl
+          - ca-certificates
+        state: present
+        lock_timeout: 300
+
+    - name: Enable qemu guest agent
+      ansible.builtin.service:
+        name: qemu-guest-agent
+        state: started
+        enabled: true
+      ignore_errors: true
+
+    - name: Write provisioning marker
+      ansible.builtin.copy:
+        dest: /etc/diploma-vm-info
+        mode: "0644"
+        content: |
+          provisioned_by=ansible
+          hostname={{ ansible_hostname }}
+          os={{ ansible_distribution }} {{ ansible_distribution_version }}

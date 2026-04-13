@@ -3,14 +3,15 @@ package itmo.backend.controller;
 import itmo.backend.model.dto.vm.CreateVmRequest;
 import itmo.backend.model.dto.vm.MetricResponse;
 import itmo.backend.model.dto.vm.MetricType;
+import itmo.backend.model.dto.vm.PageVmResponse;
 import itmo.backend.model.dto.vm.UpdateVmRequest;
 import itmo.backend.model.dto.vm.VmResponse;
+import itmo.backend.model.entity.VmStatus;
 import itmo.backend.services.VirtualMachineService;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -41,11 +42,12 @@ public class VirtualMachineController {
     }
 
     @GetMapping
-    public Page<VmResponse> list(
+    public PageVmResponse list(
         @RequestParam(defaultValue = "0") final int page,
-        @RequestParam(defaultValue = "20") final int size
+        @RequestParam(defaultValue = "20") final int size,
+        @RequestParam(required = false) final VmStatus status
     ) {
-        return virtualMachineService.list(PageRequest.of(page, size));
+        return virtualMachineService.list(PageRequest.of(page, size), status);
     }
 
     @GetMapping("/{id}")

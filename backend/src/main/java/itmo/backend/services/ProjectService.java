@@ -181,6 +181,7 @@ public class ProjectService {
             vm.getName(),
             vm.getHostname(),
             vm.getIpAddress(),
+            vm.getStatusMessage(),
             vm.getVcpu(),
             vm.getMemoryMb(),
             vm.getDiskSizeGb(),

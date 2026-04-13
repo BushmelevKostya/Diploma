@@ -12,7 +12,7 @@ resource "libvirt_cloudinit_disk" "init" {
 
   user_data = <<-EOF
 #cloud-config
-hostname: ${var.name}
+hostname: ${var.hostname}
 users:
   - name: ubuntu
     sudo: ALL=(ALL) NOPASSWD:ALL

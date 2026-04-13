@@ -16,6 +16,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "virtual_machines")
 public class VirtualMachine {
+    private static final int STATUS_MESSAGE_LIMIT = 500;
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -30,12 +31,18 @@ public class VirtualMachine {
     @Column(length = 64)
     private String ipAddress;
 
+    @Column(length = 500)
+    private String statusMessage;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private VmStatus status;
 
     @Column(nullable = false)
     private Integer vcpu;
+
+    @Column(name = "cpu_cores", nullable = false, columnDefinition = "INTEGER DEFAULT 1", insertable = false, updatable = false)
+    private Integer cpuCores;
 
     @Column(nullable = false)
     private Integer memoryMb;
@@ -62,6 +69,7 @@ public class VirtualMachine {
         final String name,
         final String hostname,
         final String ipAddress,
+        final String statusMessage,
         final VmStatus status,
         final Integer vcpu,
         final Integer memoryMb,
@@ -72,6 +80,7 @@ public class VirtualMachine {
         this.name = name;
         this.hostname = hostname;
         this.ipAddress = ipAddress;
+        this.statusMessage = statusMessage;
         this.status = status;
         this.vcpu = vcpu;
         this.memoryMb = memoryMb;
@@ -109,6 +118,10 @@ public class VirtualMachine {
 
     public VmStatus getStatus() {
         return status;
+    }
+
+    public String getStatusMessage() {
+        return statusMessage;
     }
 
     public Integer getVcpu() {
@@ -153,9 +166,53 @@ public class VirtualMachine {
 
     public void start() {
         this.status = VmStatus.RUNNING;
+        this.statusMessage = normalizeStatusMessage("VM is running");
     }
 
     public void stop() {
         this.status = VmStatus.STOPPED;
+        this.statusMessage = normalizeStatusMessage("VM is stopped");
+    }
+
+    public void markCreating(final String statusMessage) {
+        this.status = VmStatus.CREATING;
+        this.statusMessage = normalizeStatusMessage(statusMessage);
+    }
+
+    public void markRunning(final String ipAddress, final String statusMessage) {
+        this.ipAddress = ipAddress;
+        this.status = VmStatus.RUNNING;
+        this.statusMessage = normalizeStatusMessage(statusMessage);
+    }
+
+    public void markIpAddress(final String ipAddress, final String statusMessage) {
+        this.ipAddress = ipAddress;
+        this.statusMessage = normalizeStatusMessage(statusMessage);
+    }
+
+    public void markError(final String statusMessage) {
+        this.status = VmStatus.ERROR;
+        this.statusMessage = normalizeStatusMessage(statusMessage);
+    }
+
+    private String normalizeStatusMessage(final String statusMessage) {
+        if (statusMessage == null || statusMessage.isBlank()) {
+            return null;
+        }
+
+        final String normalized = statusMessage
+            .replace("\u0000", "")
+            .replace('\uFEFF', ' ')
+            .replace('\r', ' ')
+            .replace('\n', ' ')
+            .replaceAll("[\\p{Cntrl}&&[^\\r\\n\\t]]", " ")
+            .replaceAll("\\s+", " ")
+            .trim();
+
+        if (normalized.length() <= STATUS_MESSAGE_LIMIT) {
+            return normalized;
+        }
+
+        return normalized.substring(0, STATUS_MESSAGE_LIMIT - 3) + "...";
     }
 }

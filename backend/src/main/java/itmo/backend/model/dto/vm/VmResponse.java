@@ -9,6 +9,7 @@ public record VmResponse(
     String name,
     String hostname,
     String ipAddress,
+    String statusMessage,
     Integer vcpu,
     Integer memoryMb,
     Integer diskSizeGb,

@@ -22,6 +22,7 @@ public class DemoUserInitializer {
 
             final User demoUser = new User(
                 "admin",
+                "admin@example.com",
                 passwordEncoder.encode("admin123"),
                 UserRole.ADMIN
             );

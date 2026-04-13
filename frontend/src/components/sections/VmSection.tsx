@@ -6,6 +6,7 @@ import type { CreateVmRequest, VmResponse } from '../../types/api';
 interface Props {
   vmList: VmResponse[];
   onChanged: () => Promise<void>;
+  onCreated: (vm: VmResponse) => void;
   onSelectVm: (vm: VmResponse) => void;
   selectedVmId?: string;
 }
@@ -19,7 +20,7 @@ const defaultForm: CreateVmRequest = {
   osImage: 'ubuntu-22.04'
 };
 
-export function VmSection({ vmList, onChanged, onSelectVm, selectedVmId }: Props): JSX.Element {
+export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVmId }: Props): JSX.Element {
   const [form, setForm] = useState<CreateVmRequest>(defaultForm);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -33,10 +34,11 @@ export function VmSection({ vmList, onChanged, onSelectVm, selectedVmId }: Props
     event.preventDefault();
     setLoading(true);
     try {
-      await api.createVm({
+      const createdVm = await api.createVm({
         ...form,
         hostname: form.hostname?.trim() || undefined
       });
+      onCreated(createdVm);
       setForm(defaultForm);
       await onChanged();
     } finally {
@@ -158,7 +160,10 @@ export function VmSection({ vmList, onChanged, onSelectVm, selectedVmId }: Props
                   <strong>{vm.name}</strong>
                   <span className="sub">{vm.hostname ?? '-'}</span>
                 </td>
-                <td>{vm.ipAddress ?? '-'}</td>
+                <td>
+                  <strong>{vm.ipAddress ?? '-'}</strong>
+                  <span className="sub">{vm.statusMessage ?? 'No details yet'}</span>
+                </td>
                 <td>{vm.vcpu} vCPU / {vm.memoryMb} MB / {vm.diskSizeGb} GB</td>
                 <td>
                   <StatusBadge status={vm.status} />
@@ -170,7 +175,7 @@ export function VmSection({ vmList, onChanged, onSelectVm, selectedVmId }: Props
                       event.stopPropagation();
                       void onAction(vm.id, 'start');
                     }}
-                    disabled={busyId === vm.id}
+                    disabled={busyId === vm.id || vm.status === 'CREATING'}
                   >
                     Start
                   </button>
@@ -180,7 +185,7 @@ export function VmSection({ vmList, onChanged, onSelectVm, selectedVmId }: Props
                       event.stopPropagation();
                       void onAction(vm.id, 'stop');
                     }}
-                    disabled={busyId === vm.id}
+                    disabled={busyId === vm.id || vm.status === 'CREATING'}
                   >
                     Stop
                   </button>
@@ -190,7 +195,7 @@ export function VmSection({ vmList, onChanged, onSelectVm, selectedVmId }: Props
                       event.stopPropagation();
                       void onAction(vm.id, 'delete');
                     }}
-                    disabled={busyId === vm.id}
+                    disabled={busyId === vm.id || vm.status === 'CREATING'}
                   >
                     Delete
                   </button>
