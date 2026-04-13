@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import type { IDisposable } from '@xterm/xterm';
 import type { VmResponse } from '../../types/api';
 import '@xterm/xterm/css/xterm.css';
 
@@ -16,12 +17,17 @@ export function TerminalSection({ selectedVm, token }: Props): JSX.Element {
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const dataListenerRef = useRef<IDisposable | null>(null);
   const [connected, setConnected] = useState(false);
 
   const disposeSocket = (): void => {
     if (socketRef.current) {
       socketRef.current.close();
       socketRef.current = null;
+    }
+    if (dataListenerRef.current) {
+      dataListenerRef.current.dispose();
+      dataListenerRef.current = null;
     }
     setConnected(false);
   };
@@ -76,7 +82,6 @@ export function TerminalSection({ selectedVm, token }: Props): JSX.Element {
 
     ws.onopen = () => {
       setConnected(true);
-      term.writeln(`Connected to VM ${selectedVm.name}`);
       term.focus();
     };
 
@@ -93,7 +98,7 @@ export function TerminalSection({ selectedVm, token }: Props): JSX.Element {
       term.writeln('\r\nTerminal socket error');
     };
 
-    term.onData((data) => {
+    dataListenerRef.current = term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(data);
       }
