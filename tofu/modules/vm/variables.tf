@@ -1,6 +1,9 @@
 variable "name" {
   type = string
 }
+variable "hostname" {
+  type = string
+}
 variable "vcpu" {
   type = number
 }
