@@ -10,6 +10,9 @@ public class InfraProperties {
     private String repoRoot = "C:/Projects/Diploma";
     private String wslRepoRoot = "/mnt/c/Projects/Diploma";
     private String virtualizationHost = "89.104.68.81";
+    private String virtualizationUser = "root";
+    private String virtualizationPrivateKeyPath = "";
+    private String vmSshUser = "ubuntu";
     private String ansiblePrivateKeyPath = "/home/kostik/.ssh/id_rsa_vm";
     private String tofuCommand = "tofu";
     private String ansiblePlaybookCommand = "ansible-playbook";
@@ -56,6 +59,30 @@ public class InfraProperties {
 
     public void setVirtualizationHost(final String virtualizationHost) {
         this.virtualizationHost = virtualizationHost;
+    }
+
+    public String getVirtualizationUser() {
+        return virtualizationUser;
+    }
+
+    public void setVirtualizationUser(final String virtualizationUser) {
+        this.virtualizationUser = virtualizationUser;
+    }
+
+    public String getVirtualizationPrivateKeyPath() {
+        return virtualizationPrivateKeyPath;
+    }
+
+    public void setVirtualizationPrivateKeyPath(final String virtualizationPrivateKeyPath) {
+        this.virtualizationPrivateKeyPath = virtualizationPrivateKeyPath;
+    }
+
+    public String getVmSshUser() {
+        return vmSshUser;
+    }
+
+    public void setVmSshUser(final String vmSshUser) {
+        this.vmSshUser = vmSshUser;
     }
 
     public String getAnsiblePrivateKeyPath() {
