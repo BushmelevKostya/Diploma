@@ -112,6 +112,10 @@ export function App(): JSX.Element {
     setSelectedVmId(undefined);
   };
 
+  const handleVmCreated = (vm: VmResponse): void => {
+    setSelectedVmId(vm.id);
+  };
+
   if (!token) {
     return (
       <main className="auth-layout">
@@ -180,6 +184,7 @@ export function App(): JSX.Element {
         <VmSection
           vmList={vmList}
           onChanged={loadData}
+          onCreated={handleVmCreated}
           onSelectVm={(vm) => setSelectedVmId(vm.id)}
           selectedVmId={selectedVm?.id}
         />

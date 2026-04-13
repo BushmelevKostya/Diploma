@@ -8,6 +8,8 @@ interface Props {
 
 const statusClassMap: Record<Status, string> = {
   CREATING: 'status status-warn',
+  STARTING: 'status status-warn',
+  STOPPING: 'status status-warn',
   RUNNING: 'status status-ok',
   STOPPED: 'status status-neutral',
   ERROR: 'status status-err',

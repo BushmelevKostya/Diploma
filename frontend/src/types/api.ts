@@ -1,5 +1,5 @@
 export type UserRole = 'ADMIN' | 'OPERATOR' | 'VIEWER';
-export type VmStatus = 'CREATING' | 'RUNNING' | 'STOPPED' | 'ERROR';
+export type VmStatus = 'CREATING' | 'RUNNING' | 'STOPPED' | 'STARTING' | 'STOPPING' | 'ERROR';
 export type DriftStatus = 'CLEAN' | 'DRIFTED' | 'UNKNOWN';
 export type SnapshotStatus = 'CREATING' | 'READY' | 'RESTORING' | 'FAILED';
 
@@ -34,6 +34,7 @@ export interface VmResponse {
   name: string;
   hostname?: string;
   ipAddress?: string;
+  statusMessage?: string;
   vcpu: number;
   memoryMb: number;
   diskSizeGb: number;
