@@ -67,8 +67,11 @@ public class AuthService {
 		}
 
 		final String hashedPassword = passwordEncoder.encode(request.password());
+		// Generate email from username if not provided in legacy RegisterRequest
+		final String email = request.username() + "@example.com";
 		final User newUser = new User(
 			request.username(),
+			email,
 			hashedPassword,
 			UserRole.OPERATOR
 		);

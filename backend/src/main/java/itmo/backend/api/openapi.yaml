@@ -1002,7 +1002,7 @@ components:
 
     VmStatus:
       type: string
-      enum: [CREATING, RUNNING, STOPPED, ERROR]
+      enum: [CREATING, RUNNING, STOPPED, STARTING, STOPPING, ERROR]
 
     DeploymentStatus:
       type: string
@@ -1176,6 +1176,8 @@ components:
         hostname:
           type: string
         ipAddress:
+          type: string
+        statusMessage:
           type: string
         vcpu:
           type: integer
