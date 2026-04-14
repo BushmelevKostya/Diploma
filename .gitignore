@@ -48,3 +48,7 @@ tofu/.terraform.lock.hcl
 **/skill.md
 res.txt
 tofu/id_rsa.pub
+dump.py
+project_dump.txt
+backend/id_rsa_vm
+backend/id_rsa_vm_pem
