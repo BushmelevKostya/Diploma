@@ -198,7 +198,7 @@ export function App(): JSX.Element {
 
       <div className="grid-two">
         <SnapshotSection selectedVm={selectedVm} />
-        <TerminalSection selectedVm={selectedVm} token={token} />
+        <TerminalSection selectedVm={selectedVm} />
       </div>
     </main>
   );

@@ -38,6 +38,10 @@ public class VirtualMachine {
     @Column(nullable = false, length = 20)
     private VmStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private VmStatus desiredStatus;
+
     @Column(nullable = false)
     private Integer vcpu;
 
@@ -82,6 +86,7 @@ public class VirtualMachine {
         this.ipAddress = ipAddress;
         this.statusMessage = statusMessage;
         this.status = status;
+        this.desiredStatus = VmStatus.RUNNING;
         this.vcpu = vcpu;
         this.memoryMb = memoryMb;
         this.diskSizeGb = diskSizeGb;
@@ -118,6 +123,10 @@ public class VirtualMachine {
 
     public VmStatus getStatus() {
         return status;
+    }
+
+    public VmStatus getDesiredStatus() {
+        return desiredStatus;
     }
 
     public String getStatusMessage() {
@@ -174,6 +183,10 @@ public class VirtualMachine {
         this.statusMessage = normalizeStatusMessage("VM is stopped");
     }
 
+    public void markDesiredStatus(final VmStatus desiredStatus) {
+        this.desiredStatus = desiredStatus;
+    }
+
     public void markCreating(final String statusMessage) {
         this.status = VmStatus.CREATING;
         this.statusMessage = normalizeStatusMessage(statusMessage);
@@ -182,6 +195,9 @@ public class VirtualMachine {
     public void markRunning(final String ipAddress, final String statusMessage) {
         this.ipAddress = ipAddress;
         this.status = VmStatus.RUNNING;
+        if (this.desiredStatus == null) {
+            this.desiredStatus = VmStatus.RUNNING;
+        }
         this.statusMessage = normalizeStatusMessage(statusMessage);
     }
 

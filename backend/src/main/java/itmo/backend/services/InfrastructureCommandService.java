@@ -172,6 +172,14 @@ public class InfrastructureCommandService {
         .formatted(infraProperties.getVirtualizationHost(), shellEscape(vmName)));
   }
 
+  public String resolveVmPowerState(final String vmName) throws IOException, InterruptedException {
+    log.info("Reading actual power state for VM {} through libvirt", vmName);
+    final String output = runAndCapture("virsh-domstate-" + vmName,
+      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh domstate %s"
+        .formatted(infraProperties.getVirtualizationHost(), shellEscape(vmName)));
+    return output == null ? "" : output.trim();
+  }
+
   private void runInRepo(final String commandName, final String command) throws IOException, InterruptedException {
     final CommandResult result = execute(commandName, command);
     final int exitCode = result.exitCode();

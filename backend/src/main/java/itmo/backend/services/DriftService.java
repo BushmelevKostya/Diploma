@@ -6,6 +6,7 @@ import itmo.backend.model.dto.drift.DriftStatus;
 import itmo.backend.model.dto.drift.PageDriftReportResponse;
 import itmo.backend.model.dto.drift.PageInfo;
 import itmo.backend.model.entity.VirtualMachine;
+import itmo.backend.model.entity.VmStatus;
 import itmo.backend.model.exceptions.ApiException;
 import itmo.backend.model.repository.VirtualMachineRepository;
 import java.time.Instant;
@@ -24,10 +25,15 @@ import org.springframework.stereotype.Service;
 public class DriftService {
 
     private final VirtualMachineRepository virtualMachineRepository;
+    private final InfrastructureCommandService infrastructureCommandService;
     private final Map<UUID, DriftRecord> reports = new ConcurrentHashMap<>();
 
-    public DriftService(final VirtualMachineRepository virtualMachineRepository) {
+    public DriftService(
+        final VirtualMachineRepository virtualMachineRepository,
+        final InfrastructureCommandService infrastructureCommandService
+    ) {
         this.virtualMachineRepository = virtualMachineRepository;
+        this.infrastructureCommandService = infrastructureCommandService;
     }
 
     public DriftReportResponse createReport(final UUID vmId) {
@@ -104,6 +110,7 @@ public class DriftService {
     }
 
     private Map<String, Object> expectedState(final VirtualMachine vm) {
+        final VmStatus desiredStatus = vm.getDesiredStatus() == null ? VmStatus.RUNNING : vm.getDesiredStatus();
         return Map.of(
             "name", vm.getName(),
             "hostname", vm.getHostname(),
@@ -111,11 +118,12 @@ public class DriftService {
             "memoryMb", vm.getMemoryMb(),
             "diskSizeGb", vm.getDiskSizeGb(),
             "osImage", vm.getOsImage(),
-            "status", "STOPPED"
+            "status", desiredStatus.name()
         );
     }
 
     private Map<String, Object> actualState(final VirtualMachine vm) {
+        final String actualStatus = resolveActualStatus(vm);
         return Map.of(
             "name", vm.getName(),
             "hostname", vm.getHostname(),
@@ -123,8 +131,37 @@ public class DriftService {
             "memoryMb", vm.getMemoryMb(),
             "diskSizeGb", vm.getDiskSizeGb(),
             "osImage", vm.getOsImage(),
-            "status", vm.getStatus().name()
+            "status", actualStatus
         );
+    }
+
+    private String resolveActualStatus(final VirtualMachine vm) {
+        if (!infrastructureCommandService.isEnabled()) {
+            return vm.getStatus().name();
+        }
+
+        try {
+            final String domState = infrastructureCommandService.resolveVmPowerState(vm.getName());
+            return mapDomStateToVmStatus(domState).name();
+        } catch (final Exception exception) {
+            return vm.getStatus().name();
+        }
+    }
+
+    private VmStatus mapDomStateToVmStatus(final String domStateRaw) {
+        final String domState = domStateRaw == null ? "" : domStateRaw.trim().toLowerCase();
+
+        if (domState.startsWith("running")) {
+            return VmStatus.RUNNING;
+        }
+        if (domState.startsWith("shut off") || domState.startsWith("shutdown") || domState.startsWith("stopped")) {
+            return VmStatus.STOPPED;
+        }
+        if (domState.startsWith("paused") || domState.startsWith("pmsuspended") || domState.startsWith("idle")) {
+            return VmStatus.STOPPED;
+        }
+
+        return VmStatus.ERROR;
     }
 
     private List<DriftDifference> differences(

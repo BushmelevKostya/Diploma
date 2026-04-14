@@ -141,6 +141,7 @@ public class VirtualMachineService {
                     vmProvisioningService.refreshIpAddress(vm);
                 }
             }
+            vm.markDesiredStatus(VmStatus.RUNNING);
             vm.start();
         } catch (final Exception exception) {
             log.error("Failed to start VM {} ({})", vm.getName(), vm.getId(), exception);
@@ -162,6 +163,7 @@ public class VirtualMachineService {
             if (infrastructureCommandService.isEnabled()) {
                 infrastructureCommandService.stopVm(vm.getName());
             }
+            vm.markDesiredStatus(VmStatus.STOPPED);
             vm.stop();
         } catch (final Exception exception) {
             log.error("Failed to stop VM {} ({})", vm.getName(), vm.getId(), exception);
