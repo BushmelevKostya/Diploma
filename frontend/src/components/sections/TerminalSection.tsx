@@ -3,16 +3,16 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { IDisposable } from '@xterm/xterm';
 import type { VmResponse } from '../../types/api';
+import { getAccessToken } from '../../lib/storage';
 import '@xterm/xterm/css/xterm.css';
 
 const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ?? 'ws://localhost:8080';
 
 interface Props {
   selectedVm?: VmResponse;
-  token: string;
 }
 
-export function TerminalSection({ selectedVm, token }: Props): JSX.Element {
+export function TerminalSection({ selectedVm }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -73,10 +73,16 @@ export function TerminalSection({ selectedVm, token }: Props): JSX.Element {
       return;
     }
 
+    const freshToken = getAccessToken();
+    if (!freshToken) {
+      term.writeln('Нет access token. Выполните вход заново.');
+      return;
+    }
+
     disposeSocket();
     term.clear();
 
-    const wsUrl = `${WS_BASE_URL}/api/v1/vms/${selectedVm.id}/terminal?token=${encodeURIComponent(token)}`;
+    const wsUrl = `${WS_BASE_URL}/api/v1/vms/${selectedVm.id}/terminal?token=${encodeURIComponent(freshToken)}`;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
