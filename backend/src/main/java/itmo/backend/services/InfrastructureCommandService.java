@@ -180,6 +180,45 @@ public class InfrastructureCommandService {
     return output == null ? "" : output.trim();
   }
 
+  public void createExternalDiskSnapshot(final String vmName, final String snapshotName)
+    throws IOException, InterruptedException {
+    log.info("Creating external disk-only snapshot {} for VM {}", snapshotName, vmName);
+    runInRepo("virsh-snapshot-create-" + vmName + "-" + snapshotName,
+      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- " +
+        "virsh snapshot-create-as %s %s --disk-only --atomic"
+        .formatted(
+          infraProperties.getVirtualizationHost(),
+          shellEscape(vmName),
+          shellEscape(snapshotName)
+        ));
+  }
+
+  public void restoreExternalDiskSnapshot(final String vmName, final String snapshotName)
+    throws IOException, InterruptedException {
+    log.info("Restoring VM {} from external disk-only snapshot {}", vmName, snapshotName);
+    runInRepo("virsh-snapshot-restore-" + vmName + "-" + snapshotName,
+      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- " +
+        "virsh snapshot-revert %s %s --force"
+        .formatted(
+          infraProperties.getVirtualizationHost(),
+          shellEscape(vmName),
+          shellEscape(snapshotName)
+        ));
+  }
+
+  public void deleteSnapshotMetadata(final String vmName, final String snapshotName)
+    throws IOException, InterruptedException {
+    log.info("Deleting libvirt snapshot metadata {} for VM {}", snapshotName, vmName);
+    runInRepo("virsh-snapshot-delete-" + vmName + "-" + snapshotName,
+      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- " +
+        "virsh snapshot-delete %s %s --metadata"
+        .formatted(
+          infraProperties.getVirtualizationHost(),
+          shellEscape(vmName),
+          shellEscape(snapshotName)
+        ));
+  }
+
   private void runInRepo(final String commandName, final String command) throws IOException, InterruptedException {
     final CommandResult result = execute(commandName, command);
     final int exitCode = result.exitCode();

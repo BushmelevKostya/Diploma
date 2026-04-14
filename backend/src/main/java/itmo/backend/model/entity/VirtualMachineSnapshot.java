@@ -38,6 +38,15 @@ public class VirtualMachineSnapshot {
     @Column(nullable = false)
     private Long sizeBytes;
 
+    @Column(nullable = false, length = 160)
+    private String libvirtSnapshotName;
+
+    @Column(nullable = false)
+    private Boolean externalSnapshot;
+
+    @Column(nullable = false)
+    private Boolean diskOnly;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -52,13 +61,19 @@ public class VirtualMachineSnapshot {
         final String description,
         final SnapshotStatus status,
         final UUID vmId,
-        final Long sizeBytes
+        final Long sizeBytes,
+        final String libvirtSnapshotName,
+        final Boolean externalSnapshot,
+        final Boolean diskOnly
     ) {
         this.name = name;
         this.description = description;
         this.status = status;
         this.vmId = vmId;
         this.sizeBytes = sizeBytes;
+        this.libvirtSnapshotName = libvirtSnapshotName;
+        this.externalSnapshot = externalSnapshot;
+        this.diskOnly = diskOnly;
     }
 
     @PrePersist
@@ -96,11 +111,35 @@ public class VirtualMachineSnapshot {
         return sizeBytes;
     }
 
+    public String getLibvirtSnapshotName() {
+        return libvirtSnapshotName;
+    }
+
+    public Boolean getExternalSnapshot() {
+        return externalSnapshot;
+    }
+
+    public Boolean getDiskOnly() {
+        return diskOnly;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public void markReady() {
+        this.status = SnapshotStatus.READY;
+    }
+
+    public void markRestoring() {
+        this.status = SnapshotStatus.RESTORING;
+    }
+
+    public void markFailed() {
+        this.status = SnapshotStatus.FAILED;
     }
 }
