@@ -5,15 +5,12 @@ import itmo.backend.model.dto.snapshot.SnapshotResponse;
 import itmo.backend.model.dto.snapshot.SnapshotStatus;
 import itmo.backend.model.dto.vm.VmResponse;
 import itmo.backend.model.entity.VirtualMachine;
+import itmo.backend.model.entity.VirtualMachineSnapshot;
 import itmo.backend.model.exceptions.ApiException;
+import itmo.backend.model.repository.VirtualMachineSnapshotRepository;
 import itmo.backend.model.repository.VirtualMachineRepository;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -21,34 +18,33 @@ import org.springframework.stereotype.Service;
 public class SnapshotService {
 
     private final VirtualMachineRepository virtualMachineRepository;
-    private final Map<UUID, Map<UUID, SnapshotRecord>> snapshotsByVmId = new ConcurrentHashMap<>();
+    private final VirtualMachineSnapshotRepository virtualMachineSnapshotRepository;
 
-    public SnapshotService(final VirtualMachineRepository virtualMachineRepository) {
+    public SnapshotService(
+        final VirtualMachineRepository virtualMachineRepository,
+        final VirtualMachineSnapshotRepository virtualMachineSnapshotRepository
+    ) {
         this.virtualMachineRepository = virtualMachineRepository;
+        this.virtualMachineSnapshotRepository = virtualMachineSnapshotRepository;
     }
 
     public SnapshotResponse create(final UUID vmId, final CreateSnapshotRequest request) {
         final VirtualMachine vm = findVm(vmId);
-        final SnapshotRecord record = new SnapshotRecord(
-            UUID.randomUUID(),
+        final VirtualMachineSnapshot record = new VirtualMachineSnapshot(
             request.name(),
             request.description(),
             SnapshotStatus.READY,
             vmId,
-            snapshotSizeBytes(vm),
-            Instant.now()
+            snapshotSizeBytes(vm)
         );
 
-        snapshotsByVmId.computeIfAbsent(vmId, ignored -> new ConcurrentHashMap<>())
-            .put(record.id(), record);
-
-        return toResponse(record);
+        final VirtualMachineSnapshot saved = virtualMachineSnapshotRepository.save(record);
+        return toResponse(saved);
     }
 
     public List<SnapshotResponse> list(final UUID vmId) {
         findVm(vmId);
-        return snapshotsByVmId.getOrDefault(vmId, Map.of()).values().stream()
-            .sorted(Comparator.comparing(SnapshotRecord::createdAt).reversed())
+        return virtualMachineSnapshotRepository.findAllByVmIdOrderByCreatedAtDesc(vmId).stream()
             .map(this::toResponse)
             .toList();
     }
@@ -58,11 +54,8 @@ public class SnapshotService {
     }
 
     public void delete(final UUID vmId, final UUID id) {
-        findSnapshot(vmId, id);
-        final Map<UUID, SnapshotRecord> snapshots = snapshotsByVmId.get(vmId);
-        if (snapshots != null) {
-            snapshots.remove(id);
-        }
+        final VirtualMachineSnapshot snapshot = findSnapshot(vmId, id);
+        virtualMachineSnapshotRepository.delete(snapshot);
     }
 
     public VmResponse restore(final UUID vmId, final UUID id, final VirtualMachineService virtualMachineService) {
@@ -78,8 +71,9 @@ public class SnapshotService {
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VM not found"));
     }
 
-    private SnapshotRecord findSnapshot(final UUID vmId, final UUID id) {
-        final SnapshotRecord record = snapshotsByVmId.getOrDefault(vmId, Map.of()).get(id);
+    private VirtualMachineSnapshot findSnapshot(final UUID vmId, final UUID id) {
+        final VirtualMachineSnapshot record = virtualMachineSnapshotRepository.findByIdAndVmId(id, vmId)
+            .orElse(null);
         if (record == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Snapshot not found");
         }
@@ -87,30 +81,19 @@ public class SnapshotService {
         return record;
     }
 
-    private SnapshotResponse toResponse(final SnapshotRecord record) {
+    private SnapshotResponse toResponse(final VirtualMachineSnapshot record) {
         return new SnapshotResponse(
-            record.id(),
-            record.name(),
-            record.description(),
-            record.status(),
-            record.vmId(),
-            record.sizeBytes(),
-            record.createdAt()
+            record.getId(),
+            record.getName(),
+            record.getDescription(),
+            record.getStatus(),
+            record.getVmId(),
+            record.getSizeBytes(),
+            record.getCreatedAt()
         );
     }
 
     private long snapshotSizeBytes(final VirtualMachine vm) {
         return vm.getDiskSizeGb().longValue() * 1024L * 1024L * 1024L;
-    }
-
-    private record SnapshotRecord(
-        UUID id,
-        String name,
-        String description,
-        SnapshotStatus status,
-        UUID vmId,
-        long sizeBytes,
-        Instant createdAt
-    ) {
     }
 }
