@@ -3,6 +3,8 @@
   hosts: managed_vms
   become: true
   gather_facts: true
+  vars:
+    selected_environment_packages: "{{ environment_packages | default([]) }}"
 
   tasks:
     - name: Update apt cache
@@ -17,6 +19,7 @@
           - qemu-guest-agent
           - curl
           - ca-certificates
+          - python3
         state: present
         lock_timeout: 300
 
@@ -35,3 +38,78 @@
           provisioned_by=ansible
           hostname={{ ansible_hostname }}
           os={{ ansible_distribution }} {{ ansible_distribution_version }}
+          environment_packages={{ selected_environment_packages | join(',') }}
+
+    - name: Install SSH server
+      ansible.builtin.apt:
+        name: openssh-server
+        state: present
+        lock_timeout: 300
+      when: "'SSH' in selected_environment_packages"
+
+    - name: Ensure SSH server is enabled
+      ansible.builtin.service:
+        name: ssh
+        state: started
+        enabled: true
+      when: "'SSH' in selected_environment_packages"
+
+    - name: Install Docker
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        lock_timeout: 300
+      when: "'DOCKER' in selected_environment_packages"
+
+    - name: Add ubuntu user to docker group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+      when: "'DOCKER' in selected_environment_packages"
+
+    - name: Ensure Docker service is enabled
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+      when: "'DOCKER' in selected_environment_packages"
+
+    - name: Create empty HTTP demo root
+      ansible.builtin.file:
+        path: /var/www/diploma-empty
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+      when: "'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Write empty HTTP demo page
+      ansible.builtin.copy:
+        dest: /var/www/diploma-empty/index.html
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+        content: |
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>Diploma HTTP Demo</title>
+          </head>
+          <body>
+          </body>
+          </html>
+      when: "'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Install HTTP demo launcher
+      ansible.builtin.copy:
+        dest: /usr/local/bin/diploma-http-demo
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          PORT="${1:-8080}"
+          cd /var/www/diploma-empty
+          exec python3 -m http.server "$PORT" --bind 0.0.0.0
+      when: "'HTTP_SERVER' in selected_environment_packages"

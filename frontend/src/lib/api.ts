@@ -3,6 +3,7 @@ import type {
   CreateSnapshotRequest,
   CreateVmRequest,
   DriftReportResponse,
+  EnvironmentPackageOptionResponse,
   JwtResponse,
   LoginRequest,
   PageDriftReportResponse,
@@ -41,6 +42,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
+
+  listEnvironmentPackages: () =>
+    apiRequest<EnvironmentPackageOptionResponse[]>('/api/v1/vms/environment-packages'),
 
   deleteVm: (id: string) =>
     apiRequest<void>(`/api/v1/vms/${id}`, {

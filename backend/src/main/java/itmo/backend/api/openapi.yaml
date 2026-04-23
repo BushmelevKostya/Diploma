@@ -226,6 +226,20 @@ paths:
               schema:
                 $ref: '#/components/schemas/PageVmResponse'
 
+  /api/v1/vms/environment-packages:
+    get:
+      tags: [Virtual Machines]
+      summary: Получить доступные пакеты окружения для VM
+      responses:
+        '200':
+          description: Список доступных пакетов окружения
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnvironmentPackageOptionResponse'
+
   /api/v1/vms/{id}:
     get:
       tags: [Virtual Machines]
@@ -1032,6 +1046,10 @@ components:
       type: string
       enum: [CREATE, UPDATE, DELETE, START, STOP, DEPLOY, SNAPSHOT, ROLLBACK]
 
+    EnvironmentPackage:
+      type: string
+      enum: [SSH, DOCKER, HTTP_SERVER]
+
     # ======================== AUTH ========================
     LoginRequest:
       type: object
@@ -1150,6 +1168,10 @@ components:
         osImage:
           type: string
           example: ubuntu-22.04
+        environmentPackages:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnvironmentPackage'
 
     UpdateVmRequest:
       type: object
@@ -1187,6 +1209,10 @@ components:
           type: integer
         osImage:
           type: string
+        environmentPackages:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnvironmentPackage'
         status:
           $ref: '#/components/schemas/VmStatus'
         createdBy:
@@ -1198,6 +1224,16 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    EnvironmentPackageOptionResponse:
+      type: object
+      properties:
+        code:
+          $ref: '#/components/schemas/EnvironmentPackage'
+        title:
+          type: string
+        description:
+          type: string
 
     VmDetailResponse:
       allOf:

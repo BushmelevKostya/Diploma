@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { StatusBadge } from '../common/StatusBadge';
-import type { CreateVmRequest, VmResponse } from '../../types/api';
+import type { CreateVmRequest, EnvironmentPackage, EnvironmentPackageOptionResponse, VmResponse } from '../../types/api';
 
 interface Props {
   vmList: VmResponse[];
@@ -17,13 +17,19 @@ const defaultForm: CreateVmRequest = {
   vcpu: 1,
   memoryMb: 1024,
   diskSizeGb: 10,
-  osImage: 'ubuntu-22.04'
+  osImage: 'ubuntu-22.04',
+  environmentPackages: []
 };
 
 export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVmId }: Props): JSX.Element {
   const [form, setForm] = useState<CreateVmRequest>(defaultForm);
+  const [environmentOptions, setEnvironmentOptions] = useState<EnvironmentPackageOptionResponse[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    void api.listEnvironmentPackages().then(setEnvironmentOptions);
+  }, []);
 
   const sorted = useMemo(
     () => [...vmList].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
@@ -62,6 +68,18 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
     } finally {
       setBusyId(null);
     }
+  };
+
+  const toggleEnvironmentPackage = (environmentPackage: EnvironmentPackage) => {
+    setForm((prev) => {
+      const alreadySelected = prev.environmentPackages.includes(environmentPackage);
+      return {
+        ...prev,
+        environmentPackages: alreadySelected
+          ? prev.environmentPackages.filter((item) => item !== environmentPackage)
+          : [...prev.environmentPackages, environmentPackage]
+      };
+    });
   };
 
   return (
@@ -133,6 +151,24 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
             required
           />
         </label>
+        <div className="option-group">
+          <span className="option-group-title">Окружение</span>
+          <div className="option-grid">
+            {environmentOptions.map((option) => (
+              <label key={option.code} className="checkbox-card">
+                <input
+                  type="checkbox"
+                  checked={form.environmentPackages.includes(option.code)}
+                  onChange={() => toggleEnvironmentPackage(option.code)}
+                />
+                <span>
+                  <strong>{option.title}</strong>
+                  <small>{option.description}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
         <button className="btn" disabled={loading}>
           {loading ? 'Создание...' : 'Создать стенд'}
         </button>
@@ -159,6 +195,9 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
                 <td>
                   <strong>{vm.name}</strong>
                   <span className="sub">{vm.hostname ?? '-'}</span>
+                  <span className="sub">
+                    {vm.environmentPackages.length > 0 ? vm.environmentPackages.join(', ') : 'base only'}
+                  </span>
                 </td>
                 <td>
                   <strong>{vm.ipAddress ?? '-'}</strong>

@@ -139,6 +139,49 @@ p {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.option-group {
+  display: grid;
+  gap: 0.55rem;
+  grid-column: 1 / -1;
+}
+
+.option-group-title {
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.checkbox-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.75rem 0.85rem;
+  background: var(--surface-strong);
+  color: var(--ink);
+}
+
+.checkbox-card input {
+  margin-top: 0.2rem;
+  min-height: auto;
+}
+
+.checkbox-card span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.checkbox-card small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 label {
   display: grid;
   gap: 0.35rem;
@@ -337,6 +380,7 @@ tbody tr:hover {
   .grid-two,
   .status-row,
   .form-grid,
+  .option-grid,
   .inline-form {
     grid-template-columns: 1fr;
   }

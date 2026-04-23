@@ -186,6 +186,7 @@ public class ProjectService {
             vm.getMemoryMb(),
             vm.getDiskSizeGb(),
             vm.getOsImage(),
+            vm.getEnvironmentPackages(),
             vm.getStatus(),
             vm.getCreatedBy(),
             vm.getCreatedAt(),
