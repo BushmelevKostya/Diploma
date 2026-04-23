@@ -16,7 +16,7 @@ public class InfraProperties {
     private String ansiblePrivateKeyPath = "/home/kostik/.ssh/id_rsa_vm";
     private String tofuCommand = "tofu";
     private String ansiblePlaybookCommand = "ansible-playbook";
-    private int ipWaitTimeoutSeconds = 180;
+    private int ipWaitTimeoutSeconds = 600;
     private int ipPollIntervalSeconds = 5;
     private int commandTimeoutSeconds = 900;
     private int commandProgressLogIntervalSeconds = 15;

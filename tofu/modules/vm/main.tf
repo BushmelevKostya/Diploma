@@ -62,6 +62,10 @@ resource "libvirt_volume" "cloudinit" {
   name = "${var.name}-cloudinit.iso"
   pool = var.storage_pool
 
+  lifecycle {
+    ignore_changes = [create]
+  }
+
   create = {
     content = {
       url = libvirt_cloudinit_disk.init.path

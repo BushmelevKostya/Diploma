@@ -14,7 +14,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +29,8 @@ public class InfrastructureCommandService {
   private static final Logger log = LoggerFactory.getLogger(InfrastructureCommandService.class);
   private static final String GENERATED_TFVARS_RELATIVE_PATH = "tofu/generated/vms.auto.tfvars.json";
   private static final String ANSIBLE_INVENTORY_RELATIVE_PATH = "ansible/inventory/hosts.yml";
+  private static final String WSL_ANSIBLE_PRIVATE_KEY_PATH = "/tmp/diploma_ansible_id_rsa";
+  private static final Pattern WINDOWS_ABSOLUTE_PATH = Pattern.compile("^([A-Za-z]):[\\\\/](.*)$");
 
   private final InfraProperties infraProperties;
 
@@ -116,6 +121,7 @@ public class InfrastructureCommandService {
 
   public void writeAnsibleInventory(final Map<String, String> vmIps) throws IOException {
     log.info("Writing Ansible inventory for {} VM(s)", vmIps.size());
+    final String ansiblePrivateKeyPath = toAnsiblePrivateKeyPathForExecution();
     final StringBuilder content = new StringBuilder();
     content.append("all:\n");
     content.append("  children:\n");
@@ -127,7 +133,7 @@ public class InfrastructureCommandService {
       content.append("          ansible_host: ").append(entry.getValue()).append("\n");
       content.append("          ansible_user: ubuntu\n");
       content.append("          ansible_ssh_private_key_file: ")
-        .append(infraProperties.getAnsiblePrivateKeyPath()).append("\n");
+        .append(ansiblePrivateKeyPath).append("\n");
       content.append("          ansible_ssh_common_args: '")
         .append("-o ProxyJump=root@").append(infraProperties.getVirtualizationHost())
         .append(" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
@@ -143,13 +149,18 @@ public class InfrastructureCommandService {
   public void runAnsibleForVm(final String vmName) throws IOException, InterruptedException {
     log.info("Running Ansible base playbook for VM {}", vmName);
     final String ansibleDir = repoRootForShell() + "/ansible";
+    final String privateKeySourcePath = windowsPathToWsl(infraProperties.getAnsiblePrivateKeyPath());
+    final String privateKeyRuntimePath = toAnsiblePrivateKeyPathForExecution();
+    final String prepareKeyCommand = buildWslAnsibleKeyPrepareCommand(privateKeySourcePath, privateKeyRuntimePath);
     runInRepo("ansible-" + vmName, """
+        %s
         export ANSIBLE_CONFIG='%s/ansible.cfg'
         %s \
             -i '%s/inventory/hosts.yml' \
             '%s/playbooks/base.yml' \
             -l '%s'
         """.formatted(
+      prepareKeyCommand,
       ansibleDir,
       infraProperties.getAnsiblePlaybookCommand(),
       ansibleDir,
@@ -183,13 +194,15 @@ public class InfrastructureCommandService {
   public void createExternalDiskSnapshot(final String vmName, final String snapshotName)
     throws IOException, InterruptedException {
     log.info("Creating external disk-only snapshot {} for VM {}", snapshotName, vmName);
+    final String sourcePath = resolveVmDiskSourcePath(vmName, "vda");
+    final String snapshotPath = buildSnapshotPath(sourcePath, snapshotName);
     runInRepo("virsh-snapshot-create-" + vmName + "-" + snapshotName,
-      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- " +
-        "virsh snapshot-create-as %s %s --disk-only --atomic"
+      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh snapshot-create-as %s %s --disk-only --halt --atomic --diskspec vda,snapshot=external,file=%s"
         .formatted(
           infraProperties.getVirtualizationHost(),
           shellEscape(vmName),
-          shellEscape(snapshotName)
+          shellEscape(snapshotName),
+          shellEscape(snapshotPath)
         ));
   }
 
@@ -197,21 +210,90 @@ public class InfrastructureCommandService {
     throws IOException, InterruptedException {
     log.info("Restoring VM {} from external disk-only snapshot {}", vmName, snapshotName);
     runInRepo("virsh-snapshot-restore-" + vmName + "-" + snapshotName,
-      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- " +
-        "virsh snapshot-revert %s %s --force"
-        .formatted(
-          infraProperties.getVirtualizationHost(),
-          shellEscape(vmName),
-          shellEscape(snapshotName)
-        ));
+      """
+        ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- bash -lc '
+          set -euo pipefail
+          VM_NAME='\''%s'\''
+          SNAPSHOT_NAME='\''%s'\''
+
+          CURRENT_STATE="$(virsh domstate "$VM_NAME" 2>/dev/null || true)"
+          case "$CURRENT_STATE" in
+            running*|paused*|pmsuspended*|in\\ shutdown)
+              virsh destroy "$VM_NAME" >/dev/null
+              ;;
+          esac
+
+          SNAPSHOT_DISK="$(virsh snapshot-dumpxml "$VM_NAME" "$SNAPSHOT_NAME" | awk -F"'"'"'" '
+            /<disk name=.vda./ && /<source file=/ {
+              for (i = 1; i <= NF; i++) {
+                if ($(i - 1) ~ /file=/) {
+                  print $i
+                  exit
+                }
+              }
+            }'
+          )"
+          if [[ -z "$SNAPSHOT_DISK" ]]; then
+            echo "Unable to resolve snapshot disk for $VM_NAME/$SNAPSHOT_NAME" >&2
+            exit 1
+          fi
+
+          RESTORE_TARGET="$(qemu-img info "$SNAPSHOT_DISK" | awk -F": " '
+            /backing file:/ {
+              sub(/ \\(.*/, "", $2)
+              print $2
+              exit
+            }'
+          )"
+          if [[ -z "$RESTORE_TARGET" ]]; then
+            echo "Unable to resolve backing file for snapshot disk $SNAPSHOT_DISK" >&2
+            exit 1
+          fi
+
+          DOMAIN_XML="$(mktemp)"
+          UPDATED_XML="$(mktemp)"
+          trap "rm -f \\"$DOMAIN_XML\\" \\"$UPDATED_XML\\"" EXIT
+          virsh dumpxml "$VM_NAME" > "$DOMAIN_XML"
+
+          awk -v restore_target="$RESTORE_TARGET" '
+            /<disk type=.file. device=.disk.>/ {
+              in_disk = 1
+              target_vda = 0
+            }
+            in_disk && /<target dev=.vda./ {
+              target_vda = 1
+            }
+            in_disk && target_vda && /<source file=/ && !updated {
+              sub(/file=.([^"'"'"'"'"'"']+)./, "file=\\047" restore_target "\\047")
+              updated = 1
+            }
+            in_disk && /<\\/disk>/ {
+              in_disk = 0
+              target_vda = 0
+            }
+            {
+              print
+            }
+            END {
+              if (!updated) {
+                exit 1
+              }
+            }' "$DOMAIN_XML" > "$UPDATED_XML"
+
+          virsh define "$UPDATED_XML" >/dev/null
+        '
+        """.formatted(
+        infraProperties.getVirtualizationHost(),
+        shellEscape(vmName),
+        shellEscape(snapshotName)
+      ));
   }
 
   public void deleteSnapshotMetadata(final String vmName, final String snapshotName)
     throws IOException, InterruptedException {
     log.info("Deleting libvirt snapshot metadata {} for VM {}", snapshotName, vmName);
     runInRepo("virsh-snapshot-delete-" + vmName + "-" + snapshotName,
-      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- " +
-        "virsh snapshot-delete %s %s --metadata"
+      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh snapshot-delete %s %s --metadata"
         .formatted(
           infraProperties.getVirtualizationHost(),
           shellEscape(vmName),
@@ -269,6 +351,90 @@ public class InfrastructureCommandService {
 
   private String shellEscape(final String value) {
     return value.replace("'", "'\"'\"'");
+  }
+
+  private String toAnsiblePrivateKeyPathForExecution() {
+    final String configuredPath = infraProperties.getAnsiblePrivateKeyPath();
+    if (!infraProperties.isUseWsl()) {
+      return configuredPath;
+    }
+
+    final String wslPath = windowsPathToWsl(configuredPath);
+    if (wslPath.startsWith("/mnt/")) {
+      return WSL_ANSIBLE_PRIVATE_KEY_PATH;
+    }
+
+    return wslPath;
+  }
+
+  private String buildWslAnsibleKeyPrepareCommand(final String sourcePath, final String targetPath) {
+    if (!infraProperties.isUseWsl()) {
+      return "";
+    }
+
+    if (!sourcePath.startsWith("/mnt/") || sourcePath.equals(targetPath)) {
+      return "";
+    }
+
+    return """
+      install -m 600 '%s' '%s'
+      """.formatted(shellEscape(sourcePath), shellEscape(targetPath));
+  }
+
+  private String windowsPathToWsl(final String path) {
+    if (path == null || path.isBlank()) {
+      return path;
+    }
+
+    final String normalized = path.replace('\\', '/');
+    final Matcher matcher = WINDOWS_ABSOLUTE_PATH.matcher(normalized);
+    if (!matcher.matches()) {
+      return normalized;
+    }
+
+    final String drive = matcher.group(1).toLowerCase(Locale.ROOT);
+    final String rest = matcher.group(2);
+    return "/mnt/" + drive + "/" + rest;
+  }
+
+  private String resolveVmDiskSourcePath(final String vmName, final String targetDevice)
+    throws IOException, InterruptedException {
+    final String output = runAndCapture("virsh-domblklist-" + vmName, "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh domblklist %s --details"
+      .formatted(infraProperties.getVirtualizationHost(), shellEscape(vmName)));
+
+    for (final String rawLine : output.split("\\R")) {
+      final String line = rawLine.trim();
+      if (line.isBlank() || line.startsWith("Type") || line.startsWith("---")) {
+        continue;
+      }
+
+      final String[] parts = line.split("\\s+");
+      if (parts.length >= 4 && "disk".equalsIgnoreCase(parts[1]) && targetDevice.equalsIgnoreCase(parts[2])) {
+        return parts[3];
+      }
+    }
+
+    throw new IOException("Could not resolve source disk path for VM " + vmName + " and device " + targetDevice);
+  }
+
+  private String buildSnapshotPath(final String sourcePath, final String snapshotName) {
+    final String fileName = snapshotName + ".qcow2";
+    final String normalizedSourcePath = sourcePath == null ? "" : sourcePath.trim();
+
+    if (normalizedSourcePath.isBlank()) {
+      return "/var/lib/libvirt/images/" + fileName;
+    }
+
+    final String absoluteSourcePath = normalizedSourcePath.startsWith("/")
+      ? normalizedSourcePath
+      : "/var/lib/libvirt/images/" + normalizedSourcePath;
+
+    final int lastSlash = absoluteSourcePath.lastIndexOf('/');
+    if (lastSlash < 0) {
+      return "/var/lib/libvirt/images/" + fileName;
+    }
+
+    return absoluteSourcePath.substring(0, lastSlash + 1) + fileName;
   }
 
   private String summarize(final String text) {
