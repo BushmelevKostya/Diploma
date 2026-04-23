@@ -12,7 +12,7 @@ terraform {
     bucket                      = "tofu-state"
     key                         = "workstation/terraform.tfstate"
     region                      = "us-east-1"
-    endpoints                   = { s3 = "http://localhost:9000" }
+    endpoints                   = { s3 = "http://localhost:9004" }
     access_key                  = "minioadmin"
     secret_key                  = "minioadmin"
     skip_credentials_validation = true

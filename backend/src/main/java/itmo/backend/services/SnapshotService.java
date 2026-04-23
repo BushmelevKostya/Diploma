@@ -41,6 +41,13 @@ public class SnapshotService {
         }
 
         final VirtualMachine vm = findVm(vmId);
+        final boolean wasRunning;
+        try {
+            wasRunning = resolveActualVmStatus(vm.getName()) == VmStatus.RUNNING;
+        } catch (final Exception exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Snapshot creation failed: " + rootMessage(exception));
+        }
+
         final String libvirtSnapshotName = generateLibvirtSnapshotName(vm.getName());
         final VirtualMachineSnapshot record = new VirtualMachineSnapshot(
             request.name(),
@@ -56,6 +63,29 @@ public class SnapshotService {
         final VirtualMachineSnapshot saved = virtualMachineSnapshotRepository.save(record);
         try {
             infrastructureCommandService.createExternalDiskSnapshot(vm.getName(), libvirtSnapshotName);
+
+            if (wasRunning) {
+                try {
+                    infrastructureCommandService.startVm(vm.getName());
+                } catch (final Exception restartException) {
+                    log.warn("VM {} was not restarted automatically after snapshot {}", vm.getName(), libvirtSnapshotName, restartException);
+                }
+            }
+
+            try {
+                final VmStatus actualStatus = resolveActualVmStatus(vm.getName());
+                if (actualStatus == VmStatus.RUNNING) {
+                    vm.start();
+                } else if (actualStatus == VmStatus.STOPPED) {
+                    vm.stop();
+                } else {
+                    vm.markError("VM state after snapshot creation is unknown");
+                }
+                virtualMachineRepository.save(vm);
+            } catch (final Exception statusException) {
+                log.warn("Unable to resync VM {} state after snapshot creation", vm.getName(), statusException);
+            }
+
             saved.markReady();
             return toResponse(virtualMachineSnapshotRepository.save(saved));
         } catch (final Exception exception) {
@@ -99,11 +129,20 @@ public class SnapshotService {
 
         final VirtualMachineSnapshot snapshot = findSnapshot(vmId, id);
         final VirtualMachine vm = findVm(vmId);
+        final boolean wasRunning;
+        try {
+            wasRunning = resolveActualVmStatus(vm.getName()) == VmStatus.RUNNING;
+        } catch (final Exception exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Snapshot restore failed: " + rootMessage(exception));
+        }
         snapshot.markRestoring();
         virtualMachineSnapshotRepository.save(snapshot);
 
         try {
             infrastructureCommandService.restoreExternalDiskSnapshot(vm.getName(), snapshot.getLibvirtSnapshotName());
+            if (wasRunning) {
+                infrastructureCommandService.startVm(vm.getName());
+            }
             final VmStatus actualStatus = resolveActualVmStatus(vm.getName());
             if (actualStatus == VmStatus.RUNNING) {
                 vm.start();
