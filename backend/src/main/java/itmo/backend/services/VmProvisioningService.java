@@ -80,13 +80,13 @@ public class VmProvisioningService {
       if (!remaining.isEmpty()) {
         try {
           final Map<String, String> vmIps = collectReachableIps(remaining);
-          infrastructureCommandService.writeAnsibleInventory(vmIps);
+          infrastructureCommandService.writeAnsibleInventory(remaining, vmIps);
           log.info("Ansible inventory refreshed after deprovision {}", vmId);
         } catch (final Exception exception) {
           log.warn("Failed to refresh Ansible inventory after deprovision {}: {}", vmId, exception.getMessage());
         }
       } else {
-        infrastructureCommandService.writeAnsibleInventory(Map.of());
+        infrastructureCommandService.writeAnsibleInventory(List.of(), Map.of());
         log.info("Ansible inventory cleared (no remaining VMs)");
       }
     } finally {
@@ -132,7 +132,7 @@ public class VmProvisioningService {
             log.info("VM {} received IP {}", virtualMachine.getName(), ipAddress);
 
             final Map<String, String> vmIps = collectReachableIps(allVirtualMachines, virtualMachine.getName(), ipAddress);
-            infrastructureCommandService.writeAnsibleInventory(vmIps);
+            infrastructureCommandService.writeAnsibleInventory(allVirtualMachines, vmIps);
             log.info("Ansible inventory refreshed after provisioning {}", virtualMachine.getName());
 
             virtualMachine.markCreating("Applying Ansible base configuration");

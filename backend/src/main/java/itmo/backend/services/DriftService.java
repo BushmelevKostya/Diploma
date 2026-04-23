@@ -5,6 +5,7 @@ import itmo.backend.model.dto.drift.DriftReportResponse;
 import itmo.backend.model.dto.drift.DriftStatus;
 import itmo.backend.model.dto.drift.PageDriftReportResponse;
 import itmo.backend.model.dto.drift.PageInfo;
+import itmo.backend.model.dto.vm.EnvironmentPackage;
 import itmo.backend.model.entity.VirtualMachine;
 import itmo.backend.model.entity.VmStatus;
 import itmo.backend.model.exceptions.ApiException;
@@ -118,6 +119,7 @@ public class DriftService {
             "memoryMb", vm.getMemoryMb(),
             "diskSizeGb", vm.getDiskSizeGb(),
             "osImage", vm.getOsImage(),
+            "environmentPackages", environmentPackagesValue(vm.getEnvironmentPackages()),
             "status", desiredStatus.name()
         );
     }
@@ -131,8 +133,16 @@ public class DriftService {
             "memoryMb", vm.getMemoryMb(),
             "diskSizeGb", vm.getDiskSizeGb(),
             "osImage", vm.getOsImage(),
+            "environmentPackages", environmentPackagesValue(vm.getEnvironmentPackages()),
             "status", actualStatus
         );
+    }
+
+    private List<String> environmentPackagesValue(final List<EnvironmentPackage> environmentPackages) {
+        return environmentPackages.stream()
+            .map(EnvironmentPackage::name)
+            .sorted()
+            .toList();
     }
 
     private String resolveActualStatus(final VirtualMachine vm) {

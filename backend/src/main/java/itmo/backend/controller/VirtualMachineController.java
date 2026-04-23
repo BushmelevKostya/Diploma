@@ -1,6 +1,7 @@
 package itmo.backend.controller;
 
 import itmo.backend.model.dto.vm.CreateVmRequest;
+import itmo.backend.model.dto.vm.EnvironmentPackageOptionResponse;
 import itmo.backend.model.dto.vm.MetricResponse;
 import itmo.backend.model.dto.vm.MetricType;
 import itmo.backend.model.dto.vm.PageVmResponse;
@@ -87,5 +88,10 @@ public class VirtualMachineController {
         @RequestParam(required = false) final Instant to
     ) {
         return virtualMachineService.getMetrics(id, type);
+    }
+
+    @GetMapping("/environment-packages")
+    public List<EnvironmentPackageOptionResponse> environmentPackages() {
+        return virtualMachineService.environmentPackageOptions();
     }
 }

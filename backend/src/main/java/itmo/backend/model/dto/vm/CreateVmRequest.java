@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 
 public record CreateVmRequest(
     @NotBlank(message = "name must not be blank")
@@ -26,6 +27,8 @@ public record CreateVmRequest(
     Integer diskSizeGb,
 
     @NotBlank(message = "osImage must not be blank")
-    String osImage
+    String osImage,
+
+    List<EnvironmentPackage> environmentPackages
 ) {
 }

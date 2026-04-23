@@ -1,6 +1,8 @@
 package itmo.backend.services;
 
 import itmo.backend.model.dto.vm.CreateVmRequest;
+import itmo.backend.model.dto.vm.EnvironmentPackage;
+import itmo.backend.model.dto.vm.EnvironmentPackageOptionResponse;
 import itmo.backend.model.dto.vm.MetricResponse;
 import itmo.backend.model.dto.vm.MetricType;
 import itmo.backend.model.dto.vm.PageInfo;
@@ -12,7 +14,9 @@ import itmo.backend.model.entity.VmStatus;
 import itmo.backend.model.exceptions.ApiException;
 import itmo.backend.model.repository.VirtualMachineRepository;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,8 +44,8 @@ public class VirtualMachineService {
     }
 
     public VmResponse create(final CreateVmRequest request) {
-        log.info("Received create VM request: name={}, hostname={}, vcpu={}, memoryMb={}, diskSizeGb={}, osImage={}",
-            request.name(), request.hostname(), request.vcpu(), request.memoryMb(), request.diskSizeGb(), request.osImage());
+        log.info("Received create VM request: name={}, hostname={}, vcpu={}, memoryMb={}, diskSizeGb={}, osImage={}, environmentPackages={}",
+            request.name(), request.hostname(), request.vcpu(), request.memoryMb(), request.diskSizeGb(), request.osImage(), request.environmentPackages());
         if (virtualMachineRepository.findByName(request.name()).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, "VM with this name already exists");
         }
@@ -49,6 +53,7 @@ public class VirtualMachineService {
         final String hostname = request.hostname() == null || request.hostname().isBlank()
             ? request.name()
             : request.hostname();
+        final Set<EnvironmentPackage> environmentPackages = normalizeEnvironmentPackages(request.environmentPackages());
 
         final VirtualMachine vm = new VirtualMachine(
             request.name(),
@@ -60,6 +65,7 @@ public class VirtualMachineService {
             request.memoryMb(),
             request.diskSizeGb(),
             request.osImage(),
+            environmentPackages,
             null
         );
 
@@ -72,6 +78,26 @@ public class VirtualMachineService {
             return toResponse(virtualMachineRepository.save(saved));
         }
         return toResponse(saved);
+    }
+
+    public List<EnvironmentPackageOptionResponse> environmentPackageOptions() {
+        return List.of(
+            new EnvironmentPackageOptionResponse(
+                EnvironmentPackage.SSH,
+                "SSH",
+                "Гарантированно устанавливает и включает openssh-server внутри VM."
+            ),
+            new EnvironmentPackageOptionResponse(
+                EnvironmentPackage.DOCKER,
+                "Docker",
+                "Устанавливает docker.io и добавляет пользователя ubuntu в группу docker."
+            ),
+            new EnvironmentPackageOptionResponse(
+                EnvironmentPackage.HTTP_SERVER,
+                "HTTP Server",
+                "Готовит простой пустой HTTP-сайт и команду diploma-http-demo для запуска из консоли."
+            )
+        );
     }
 
     public PageVmResponse list(final Pageable pageable, final VmStatus status) {
@@ -203,11 +229,20 @@ public class VirtualMachineService {
             vm.getMemoryMb(),
             vm.getDiskSizeGb(),
             vm.getOsImage(),
+            vm.getEnvironmentPackages(),
             vm.getStatus(),
             vm.getCreatedBy(),
             vm.getCreatedAt(),
             vm.getUpdatedAt()
         );
+    }
+
+    private Set<EnvironmentPackage> normalizeEnvironmentPackages(final List<EnvironmentPackage> requestedPackages) {
+        if (requestedPackages == null || requestedPackages.isEmpty()) {
+            return new LinkedHashSet<>();
+        }
+
+        return new LinkedHashSet<>(requestedPackages);
     }
 
     private MetricResponse metric(

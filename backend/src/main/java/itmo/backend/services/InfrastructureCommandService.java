@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -119,8 +120,8 @@ public class InfrastructureCommandService {
     throw new IOException("Timed out while waiting for IP address of VM " + vmName);
   }
 
-  public void writeAnsibleInventory(final Map<String, String> vmIps) throws IOException {
-    log.info("Writing Ansible inventory for {} VM(s)", vmIps.size());
+  public void writeAnsibleInventory(final List<VirtualMachine> virtualMachines, final Map<String, String> vmIps) throws IOException {
+    log.info("Writing Ansible inventory for {} VM(s)", virtualMachines.size());
     final String ansiblePrivateKeyPath = toAnsiblePrivateKeyPathForExecution();
     final StringBuilder content = new StringBuilder();
     content.append("all:\n");
@@ -128,9 +129,14 @@ public class InfrastructureCommandService {
     content.append("    managed_vms:\n");
     content.append("      hosts:\n");
 
-    for (Map.Entry<String, String> entry : vmIps.entrySet()) {
-      content.append("        ").append(entry.getKey()).append(":\n");
-      content.append("          ansible_host: ").append(entry.getValue()).append("\n");
+    for (final VirtualMachine virtualMachine : virtualMachines) {
+      final String ipAddress = vmIps.get(virtualMachine.getName());
+      if (ipAddress == null || ipAddress.isBlank()) {
+        continue;
+      }
+
+      content.append("        ").append(virtualMachine.getName()).append(":\n");
+      content.append("          ansible_host: ").append(ipAddress).append("\n");
       content.append("          ansible_user: ubuntu\n");
       content.append("          ansible_ssh_private_key_file: ")
         .append(ansiblePrivateKeyPath).append("\n");
@@ -138,6 +144,7 @@ public class InfrastructureCommandService {
         .append("-o ProxyJump=root@").append(infraProperties.getVirtualizationHost())
         .append(" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
         .append("'\n");
+      content.append("          environment_packages: ").append(toYamlInlineList(virtualMachine.getEnvironmentPackages())).append("\n");
     }
 
     final Path inventoryPath = repoRoot().resolve(ANSIBLE_INVENTORY_RELATIVE_PATH);
@@ -351,6 +358,18 @@ public class InfrastructureCommandService {
 
   private String shellEscape(final String value) {
     return value.replace("'", "'\"'\"'");
+  }
+
+  private String toYamlInlineList(final List<?> values) {
+    if (values == null || values.isEmpty()) {
+      return "[]";
+    }
+
+    final StringJoiner joiner = new StringJoiner(", ", "[", "]");
+    for (final Object value : values) {
+      joiner.add(String.valueOf(value));
+    }
+    return joiner.toString();
   }
 
   private String toAnsiblePrivateKeyPathForExecution() {

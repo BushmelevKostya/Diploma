@@ -1,16 +1,23 @@
 package itmo.backend.model.entity;
 
+import itmo.backend.model.dto.vm.EnvironmentPackage;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -57,6 +64,12 @@ public class VirtualMachine {
     @Column(nullable = false)
     private String osImage;
 
+    @ElementCollection(targetClass = EnvironmentPackage.class)
+    @CollectionTable(name = "virtual_machine_environment_packages", joinColumns = @JoinColumn(name = "vm_id"))
+    @Column(name = "environment_package", nullable = false, length = 32)
+    @Enumerated(EnumType.STRING)
+    private Set<EnvironmentPackage> environmentPackages = new LinkedHashSet<>();
+
     @Column
     private UUID createdBy;
 
@@ -79,6 +92,7 @@ public class VirtualMachine {
         final Integer memoryMb,
         final Integer diskSizeGb,
         final String osImage,
+        final Set<EnvironmentPackage> environmentPackages,
         final UUID createdBy
     ) {
         this.name = name;
@@ -91,6 +105,7 @@ public class VirtualMachine {
         this.memoryMb = memoryMb;
         this.diskSizeGb = diskSizeGb;
         this.osImage = osImage;
+        this.environmentPackages = environmentPackages == null ? new LinkedHashSet<>() : new LinkedHashSet<>(environmentPackages);
         this.createdBy = createdBy;
     }
 
@@ -147,6 +162,10 @@ public class VirtualMachine {
 
     public String getOsImage() {
         return osImage;
+    }
+
+    public List<EnvironmentPackage> getEnvironmentPackages() {
+        return environmentPackages.stream().toList();
     }
 
     public UUID getCreatedBy() {
