@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { StatusBadge } from '../common/StatusBadge';
-import type { CreateVmRequest, EnvironmentPackage, EnvironmentPackageOptionResponse, VmResponse } from '../../types/api';
+import type {
+  CreateVmRequest,
+  EnvironmentPackage,
+  EnvironmentPackageOptionResponse,
+  OsImage,
+  VmResponse
+} from '../../types/api';
 
 interface Props {
   vmList: VmResponse[];
@@ -11,13 +17,42 @@ interface Props {
   selectedVmId?: string;
 }
 
+interface OsProfile {
+  label: string;
+  vcpu: number;
+  memoryMb: number;
+  diskSizeGb: number;
+  minMemoryMb: number;
+  minDiskGb: number;
+}
+
+const OS_PROFILES: Record<OsImage, OsProfile> = {
+  ubuntu_22_04: {
+    label: 'Ubuntu 22.04 (1 vCPU, 1024 MB, 10 GB)',
+    vcpu: 1,
+    memoryMb: 1024,
+    diskSizeGb: 10,
+    minMemoryMb: 512,
+    minDiskGb: 5
+  },
+  alpine_3_19: {
+    label: 'Alpine 3.19 (1 vCPU, 256 MB, 2 GB)',
+    vcpu: 1,
+    memoryMb: 256,
+    diskSizeGb: 2,
+    minMemoryMb: 192,
+    minDiskGb: 2
+  }
+};
+
+const defaultOs: OsImage = 'ubuntu_22_04';
 const defaultForm: CreateVmRequest = {
   name: '',
   hostname: '',
-  vcpu: 1,
-  memoryMb: 1024,
-  diskSizeGb: 10,
-  osImage: 'ubuntu-22.04',
+  vcpu: OS_PROFILES[defaultOs].vcpu,
+  memoryMb: OS_PROFILES[defaultOs].memoryMb,
+  diskSizeGb: OS_PROFILES[defaultOs].diskSizeGb,
+  osImage: defaultOs,
   environmentPackages: []
 };
 
@@ -26,6 +61,8 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
   const [environmentOptions, setEnvironmentOptions] = useState<EnvironmentPackageOptionResponse[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const currentProfile = OS_PROFILES[form.osImage];
 
   useEffect(() => {
     void api.listEnvironmentPackages().then(setEnvironmentOptions);
@@ -45,7 +82,7 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
         hostname: form.hostname?.trim() || undefined
       });
       onCreated(createdVm);
-      setForm(defaultForm);
+      setForm({ ...defaultForm });
       await onChanged();
     } finally {
       setLoading(false);
@@ -80,6 +117,17 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
           : [...prev.environmentPackages, environmentPackage]
       };
     });
+  };
+
+  const handleOsChange = (osImage: OsImage) => {
+    const profile = OS_PROFILES[osImage];
+    setForm((prev) => ({
+      ...prev,
+      osImage,
+      vcpu: profile.vcpu,
+      memoryMb: profile.memoryMb,
+      diskSizeGb: profile.diskSizeGb
+    }));
   };
 
   return (
@@ -121,7 +169,7 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
           Memory (MB)
           <input
             type="number"
-            min={512}
+            min={currentProfile.minMemoryMb}
             max={32768}
             value={form.memoryMb}
             onChange={(event) =>
@@ -134,7 +182,7 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
           Disk (GB)
           <input
             type="number"
-            min={5}
+            min={currentProfile.minDiskGb}
             max={500}
             value={form.diskSizeGb}
             onChange={(event) =>
@@ -145,11 +193,17 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
         </label>
         <label>
           OS Image
-          <input
+          <select
             value={form.osImage}
-            onChange={(event) => setForm((prev) => ({ ...prev, osImage: event.target.value }))}
+            onChange={(event) => handleOsChange(event.target.value as OsImage)}
             required
-          />
+          >
+            {(Object.entries(OS_PROFILES) as Array<[OsImage, OsProfile]>).map(([value, profile]) => (
+              <option key={value} value={value}>
+                {profile.label}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="option-group">
           <span className="option-group-title">Окружение</span>
@@ -177,77 +231,77 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
       <div className="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th>Имя</th>
-              <th>IP</th>
-              <th>Ресурсы</th>
-              <th>Статус</th>
-              <th>Действия</th>
-            </tr>
+          <tr>
+            <th>Имя</th>
+            <th>IP</th>
+            <th>Ресурсы</th>
+            <th>Статус</th>
+            <th>Действия</th>
+          </tr>
           </thead>
           <tbody>
-            {sorted.map((vm) => (
-              <tr
-                key={vm.id}
-                className={selectedVmId === vm.id ? 'row-active' : ''}
-                onClick={() => onSelectVm(vm)}
-              >
-                <td>
-                  <strong>{vm.name}</strong>
-                  <span className="sub">{vm.hostname ?? '-'}</span>
-                  <span className="sub">
+          {sorted.map((vm) => (
+            <tr
+              key={vm.id}
+              className={selectedVmId === vm.id ? 'row-active' : ''}
+              onClick={() => onSelectVm(vm)}
+            >
+              <td>
+                <strong>{vm.name}</strong>
+                <span className="sub">{vm.hostname ?? '-'}</span>
+                <span className="sub">
                     {vm.environmentPackages.length > 0 ? vm.environmentPackages.join(', ') : 'base only'}
                   </span>
-                </td>
-                <td>
-                  <strong>{vm.ipAddress ?? '-'}</strong>
-                  <span className="sub">{vm.statusMessage ?? 'No details yet'}</span>
-                </td>
-                <td>{vm.vcpu} vCPU / {vm.memoryMb} MB / {vm.diskSizeGb} GB</td>
-                <td>
-                  <StatusBadge status={vm.status} />
-                </td>
-                <td className="actions">
-                  <button
-                    className="btn btn-secondary"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void onAction(vm.id, 'start');
-                    }}
-                    disabled={busyId === vm.id || vm.status === 'CREATING'}
-                  >
-                    Start
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void onAction(vm.id, 'stop');
-                    }}
-                    disabled={busyId === vm.id || vm.status === 'CREATING'}
-                  >
-                    Stop
-                  </button>
-                  <button
-                    className="btn btn-danger"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void onAction(vm.id, 'delete');
-                    }}
-                    disabled={busyId === vm.id || vm.status === 'CREATING'}
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {sorted.length === 0 && (
-              <tr>
-                <td colSpan={5} className="empty">
-                  ВМ пока не создано
-                </td>
-              </tr>
-            )}
+              </td>
+              <td>
+                <strong>{vm.ipAddress ?? '-'}</strong>
+                <span className="sub">{vm.statusMessage ?? 'No details yet'}</span>
+              </td>
+              <td>{vm.vcpu} vCPU / {vm.memoryMb} MB / {vm.diskSizeGb} GB</td>
+              <td>
+                <StatusBadge status={vm.status} />
+              </td>
+              <td className="actions">
+                <button
+                  className="btn btn-secondary"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onAction(vm.id, 'start');
+                  }}
+                  disabled={busyId === vm.id || vm.status === 'CREATING'}
+                >
+                  Start
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onAction(vm.id, 'stop');
+                  }}
+                  disabled={busyId === vm.id || vm.status === 'CREATING'}
+                >
+                  Stop
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onAction(vm.id, 'delete');
+                  }}
+                  disabled={busyId === vm.id || vm.status === 'CREATING'}
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))}
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={5} className="empty">
+                ВМ пока не создано
+              </td>
+            </tr>
+          )}
           </tbody>
         </table>
       </div>

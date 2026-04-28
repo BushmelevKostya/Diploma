@@ -452,3 +452,31 @@ tbody tr:hover {
     justify-content: flex-start;
   }
 }
+
+input,
+select {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-height: 38px;
+  padding: 0.45rem 0.65rem;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font: inherit;
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%235f707d' d='M0 0l5 6 5-6z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  cursor: pointer;
+}
+
+input:focus,
+select:focus {
+  outline: 2px solid #9fd2ce;
+  outline-offset: 0;
+}

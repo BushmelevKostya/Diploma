@@ -3,6 +3,7 @@ export type VmStatus = 'CREATING' | 'RUNNING' | 'STOPPED' | 'STARTING' | 'STOPPI
 export type DriftStatus = 'CLEAN' | 'DRIFTED' | 'UNKNOWN';
 export type SnapshotStatus = 'CREATING' | 'READY' | 'RESTORING' | 'FAILED';
 export type EnvironmentPackage = 'SSH' | 'DOCKER' | 'HTTP_SERVER';
+export type OsImage = 'ubuntu_22_04' | 'alpine_3_19';
 
 export interface JwtResponse {
   accessToken: string;
@@ -27,7 +28,7 @@ export interface CreateVmRequest {
   vcpu: number;
   memoryMb: number;
   diskSizeGb: number;
-  osImage: string;
+  osImage: OsImage;
   environmentPackages: EnvironmentPackage[];
 }
 

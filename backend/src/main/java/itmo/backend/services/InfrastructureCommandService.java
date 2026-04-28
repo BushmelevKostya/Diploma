@@ -44,6 +44,10 @@ public class InfrastructureCommandService {
     return infraProperties.isEnabled();
   }
 
+  public String getOsPlaybook(final String osImage) {
+    return infraProperties.resolvePlaybook(osImage);
+  }
+
   public void writeDesiredState(final List<VirtualMachine> virtualMachines) throws IOException {
     log.info("Writing OpenTofu desired state for {} VM(s)", virtualMachines.size());
     final StringBuilder content = new StringBuilder();
@@ -60,7 +64,8 @@ public class InfrastructureCommandService {
         .append("      \"vcpu\": ").append(vm.getVcpu()).append(",\n")
         .append("      \"memory_mb\": ").append(vm.getMemoryMb()).append(",\n")
         .append("      \"disk_size_gb\": ").append(vm.getDiskSizeGb()).append(",\n")
-        .append("      \"os_image\": ").append(quote(vm.getOsImage())).append("\n")
+        .append("      \"os_image\": ").append(quote(vm.getOsImage())).append(",\n")
+        .append("      \"base_image_path\": ").append(quote(infraProperties.resolveBaseImagePath(vm.getOsImage()))).append("\n")
         .append("    }");
 
       if (index < virtualMachines.size() - 1) {
@@ -138,7 +143,8 @@ public class InfrastructureCommandService {
 
       content.append("        ").append(virtualMachine.getName()).append(":\n");
       content.append("          ansible_host: ").append(ipAddress).append("\n");
-      content.append("          ansible_user: ubuntu\n");
+      content.append("          ansible_user: ").append(infraProperties.resolveSshUser(virtualMachine.getOsImage())).append("\n");
+      content.append("          ansible_python_interpreter: ").append(infraProperties.resolvePythonInterpreter(virtualMachine.getOsImage())).append("\n");
       content.append("          ansible_ssh_private_key_file: ")
         .append(ansiblePrivateKeyPath).append("\n");
       content.append("          ansible_ssh_common_args: '")
@@ -160,12 +166,13 @@ public class InfrastructureCommandService {
     final String privateKeySourcePath = windowsPathToWsl(infraProperties.getAnsiblePrivateKeyPath());
     final String privateKeyRuntimePath = toAnsiblePrivateKeyPathForExecution();
     final String prepareKeyCommand = buildWslAnsibleKeyPrepareCommand(privateKeySourcePath, privateKeyRuntimePath);
+    final String playbookFile = resolvePlaybookForVm(vmName);
     runInRepo("ansible-" + vmName, """
         %s
         export ANSIBLE_CONFIG='%s/ansible.cfg'
         %s \
             -i '%s/inventory/hosts.yml' \
-            '%s/playbooks/base.yml' \
+            '%s/playbooks/%s' \
             -l '%s'
         """.formatted(
       prepareKeyCommand,
@@ -173,8 +180,38 @@ public class InfrastructureCommandService {
       infraProperties.getAnsiblePlaybookCommand(),
       ansibleDir,
       ansibleDir,
+      playbookFile,
       shellEscape(vmName)
     ));
+  }
+
+  public void runAnsibleForVmWithPlaybook(final String vmName, final String playbookFile)
+    throws IOException, InterruptedException {
+    log.info("Running Ansible playbook {} for VM {}", playbookFile, vmName);
+    final String ansibleDir = repoRootForShell() + "/ansible";
+    final String privateKeySourcePath = windowsPathToWsl(infraProperties.getAnsiblePrivateKeyPath());
+    final String privateKeyRuntimePath = toAnsiblePrivateKeyPathForExecution();
+    final String prepareKeyCommand = buildWslAnsibleKeyPrepareCommand(privateKeySourcePath, privateKeyRuntimePath);
+    runInRepo("ansible-" + vmName + "-" + playbookFile, """
+        %s
+        export ANSIBLE_CONFIG='%s/ansible.cfg'
+        %s \
+            -i '%s/inventory/hosts.yml' \
+            '%s/playbooks/%s' \
+            -l '%s'
+        """.formatted(
+      prepareKeyCommand,
+      ansibleDir,
+      infraProperties.getAnsiblePlaybookCommand(),
+      ansibleDir,
+      ansibleDir,
+      playbookFile,
+      shellEscape(vmName)
+    ));
+  }
+
+  private String resolvePlaybookForVm(final String vmName) {
+    return "base.yml";
   }
 
   public void startVm(final String vmName) throws IOException, InterruptedException {

@@ -23,10 +23,10 @@ terraform {
   }
 }
 
-variable "base_image_path" {
+variable "default_base_image_path" {
   type        = string
   default     = "/var/lib/libvirt/images/ubuntu-base.qcow2"
-  description = "Path to pre-downloaded Ubuntu cloud image on the libvirt host"
+  description = "Fallback base image path when VM payload does not provide one"
 }
 
 variable "storage_pool_name" {
@@ -36,12 +36,13 @@ variable "storage_pool_name" {
 
 variable "vms" {
   type = map(object({
-    name         = string
-    hostname     = string
-    vcpu         = number
-    memory_mb    = number
-    disk_size_gb = number
-    os_image     = string
+    name            = string
+    hostname        = string
+    vcpu            = number
+    memory_mb       = number
+    disk_size_gb    = number
+    os_image        = string
+    base_image_path = optional(string)
   }))
   default = {}
 }
@@ -49,9 +50,6 @@ variable "vms" {
 provider "libvirt" {
   uri = "qemu+ssh://root@89.104.68.81/system"
 }
-
-# Base image is pre-downloaded to host once to avoid slow download during apply.
-# The host copy lives at /var/lib/libvirt/images/ubuntu-base.qcow2.
 
 module "vms" {
   for_each        = var.vms
@@ -61,12 +59,13 @@ module "vms" {
   vcpu            = each.value.vcpu
   memory          = each.value.memory_mb * 1024
   disk_size_gb    = each.value.disk_size_gb
-  base_image_path = var.base_image_path
+  os_image        = each.value.os_image
+  base_image_path = coalesce(each.value.base_image_path, var.default_base_image_path)
   network_name    = "default"
   storage_pool    = var.storage_pool_name
   ssh_public_key  = file("${path.module}/id_rsa.pub")
 }
 
 output "vm_ips" {
-  value = { for name, vm in module.vms : name => vm.ip }
+  value = { for name, vm in module.vms : name => vm.id }
 }
