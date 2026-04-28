@@ -84,7 +84,7 @@
         mode: "0755"
       when: "'HTTP_SERVER' in selected_environment_packages"
 
-    - name: Write empty HTTP demo page
+    - name: Write HTTP demo page with VM info
       ansible.builtin.copy:
         dest: /var/www/diploma-empty/index.html
         owner: ubuntu
@@ -95,9 +95,21 @@
           <html lang="en">
           <head>
             <meta charset="utf-8">
-            <title>Diploma HTTP Demo</title>
+            <title>{{ ansible_hostname }}</title>
+            <style>
+              body { font-family: monospace; background:#0b1217; color:#d7e3ea;
+                     display:flex; align-items:center; justify-content:center;
+                     height:100vh; margin:0; }
+              .card { text-align:center; }
+              .host { font-size: 3rem; font-weight: 700; color:#9fd2ce; }
+              .ip   { font-size: 1.5rem; margin-top: .5rem; }
+            </style>
           </head>
           <body>
+            <div class="card">
+              <div class="host">{{ ansible_hostname }}</div>
+              <div class="ip">{{ ansible_default_ipv4.address }}</div>
+            </div>
           </body>
           </html>
       when: "'HTTP_SERVER' in selected_environment_packages"

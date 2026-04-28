@@ -140,7 +140,9 @@ public class VmProvisioningService {
             virtualMachineRepository.save(virtualMachine);
             log.info("VM {} marked as configuring with Ansible", virtualMachine.getName());
 
-            infrastructureCommandService.runAnsibleForVm(virtualMachine.getName());
+          final String playbookFile = infrastructureCommandService.getOsPlaybook(virtualMachine.getOsImage());
+
+          infrastructureCommandService.runAnsibleForVmWithPlaybook(virtualMachine.getName(), playbookFile);
             log.info("Ansible completed for VM {}", virtualMachine.getName());
 
             virtualMachine.markRunning(ipAddress, "Provisioning completed");

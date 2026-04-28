@@ -25,3 +25,7 @@ variable "storage_pool" {
 variable "ssh_public_key" {
   type = string
 }
+variable "os_image" {
+  type    = string
+  default = "ubuntu_22_04"
+}

@@ -11,6 +11,7 @@ public record MonitoringOverviewResponse(
   Long diskTotalBytes,
   Long diskUsedBytes,
   Double diskUsagePercent,
+  Instant collectedAt,
   String source
 ) {
 }

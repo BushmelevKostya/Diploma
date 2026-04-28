@@ -1,0 +1,128 @@
+---
+- name: Bootstrap Alpine VM
+  hosts: all
+  gather_facts: true
+  become: true
+  vars:
+    selected_environment_packages: "{{ environment_packages | default([]) }}"
+
+  tasks:
+    - name: Wait for SSH to be ready
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+
+    - name: Ensure base packages are installed
+      community.general.apk:
+        name:
+          - bash
+          - curl
+          - ca-certificates
+          - python3
+          - sudo
+        update_cache: true
+        state: present
+
+    - name: Ensure SSH server is installed and running
+      community.general.apk:
+        name: openssh
+        state: present
+      when: "'SSH' in selected_environment_packages or 'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Enable SSH service at boot
+      ansible.builtin.command: rc-update add sshd default
+      register: rc_add_sshd
+      changed_when: "'added' in rc_add_sshd.stdout"
+      failed_when: rc_add_sshd.rc != 0 and 'already' not in rc_add_sshd.stderr
+
+    - name: Start SSH service
+      ansible.builtin.command: rc-service sshd start
+      register: rc_start_sshd
+      changed_when: "'started' in rc_start_sshd.stdout"
+      failed_when: rc_start_sshd.rc != 0 and 'started' not in rc_start_sshd.stdout
+
+    - name: Create directory for HTTP demo content
+      ansible.builtin.file:
+        path: /var/www/diploma-empty
+        state: directory
+        owner: alpine
+        group: alpine
+        mode: "0755"
+      when: "'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Render HTTP demo index page
+      ansible.builtin.copy:
+        dest: /var/www/diploma-empty/index.html
+        owner: alpine
+        group: alpine
+        mode: "0644"
+        content: |
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>{{ ansible_hostname }}</title>
+            <style>
+              body { font-family: monospace; background:#0b1217; color:#d7e3ea;
+                     display:flex; align-items:center; justify-content:center;
+                     height:100vh; margin:0; }
+              .card { text-align:center; }
+              .host { font-size: 3rem; font-weight: 700; color:#9fd2ce; }
+              .ip   { font-size: 1.5rem; margin-top: .5rem; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <div class="host">{{ ansible_hostname }}</div>
+              <div class="ip">{{ ansible_default_ipv4.address }}</div>
+            </div>
+          </body>
+          </html>
+      when: "'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Install HTTP demo launcher
+      ansible.builtin.copy:
+        dest: /usr/local/bin/diploma-http-demo
+        owner: root
+        group: root
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          PORT="$${1:-8080}"
+          cd /var/www/diploma-empty
+          exec /usr/bin/python3 -m http.server "$${PORT}" --bind 0.0.0.0
+      when: "'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Install OpenRC service for HTTP demo
+      ansible.builtin.copy:
+        dest: /etc/init.d/diploma-http-demo
+        owner: root
+        group: root
+        mode: "0755"
+        content: |
+          #!/sbin/openrc-run
+          name="diploma-http-demo"
+          description="Diploma HTTP demo (returns hostname/ip)"
+          command="/usr/local/bin/diploma-http-demo"
+          command_args="8080"
+          command_background="yes"
+          pidfile="/run/diploma-http-demo.pid"
+          command_user="alpine"
+          depend() {
+              need net
+              after firewall
+          }
+      when: "'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Enable HTTP demo at boot
+      ansible.builtin.command: rc-update add diploma-http-demo default
+      when: "'HTTP_SERVER' in selected_environment_packages"
+      register: rc_add_http
+      changed_when: "'added' in rc_add_http.stdout"
+      failed_when: rc_add_http.rc != 0 and 'already' not in rc_add_http.stderr
+
+    - name: Start HTTP demo service
+      ansible.builtin.command: rc-service diploma-http-demo start
+      when: "'HTTP_SERVER' in selected_environment_packages"
+      register: rc_start_http
+      changed_when: "'started' in rc_start_http.stdout"
+      failed_when: rc_start_http.rc != 0 and 'started' not in rc_start_http.stdout
