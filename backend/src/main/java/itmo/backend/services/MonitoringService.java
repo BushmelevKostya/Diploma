@@ -79,7 +79,13 @@ public class MonitoringService {
         : "${mem_total_kb:=0}"
         : "${mem_avail_kb:=0}"
 
-        echo "$running $cpu_usage $mem_total_kb $mem_avail_kb"
+        disk_line=$(df -PB1 / | awk 'NR==2 {print $2" "$3}')
+        disk_total=$(echo "$disk_line" | awk '{print $1}')
+        disk_used=$(echo "$disk_line" | awk '{print $2}')
+        : "${disk_total:=0}"
+        : "${disk_used:=0}"
+
+        echo "$running $cpu_usage $mem_total_kb $mem_avail_kb $disk_total $disk_used"
         """
       );
 
@@ -91,7 +97,7 @@ public class MonitoringService {
 
       final String trimmed = output.trim();
       final String[] parts = trimmed.split("\\s+");
-      if (parts.length < 4) {
+      if (parts.length < 6) {
         log.warn("monitoring-overview unexpected parts count: {}", parts.length);
         return fallbackOverview();
       }
@@ -100,6 +106,8 @@ public class MonitoringService {
       final double cpuUsagePercent = clampPercent(parseDouble(parts[1]));
       final long memTotalKb = parseLong(parts[2]);
       final long memAvailKb = parseLong(parts[3]);
+      final long diskTotalBytes = parseLong(parts[4]);
+      final long diskUsedBytes = parseLong(parts[5]);
 
       final int memoryTotalMb = (int) Math.max(0L, memTotalKb / 1024L);
       final int memoryAvailableMb = (int) Math.max(0L, memAvailKb / 1024L);
@@ -108,12 +116,19 @@ public class MonitoringService {
         ? clampPercent((memoryUsedMb * 100.0) / memoryTotalMb)
         : 0.0;
 
+      final double diskUsagePercent = diskTotalBytes > 0
+        ? clampPercent((diskUsedBytes * 100.0) / diskTotalBytes)
+        : 0.0;
+
       return new MonitoringOverviewResponse(
         runningVmCount,
         cpuUsagePercent,
         memoryTotalMb,
         memoryUsedMb,
         memoryUsagePercent,
+        Math.max(0L, diskTotalBytes),
+        Math.max(0L, diskUsedBytes),
+        diskUsagePercent,
         Instant.now(),
         "virtualization-host"
       );
@@ -198,6 +213,9 @@ public class MonitoringService {
       0.0,
       memoryTotalMb,
       0,
+      0.0,
+      0L,
+      0L,
       0.0,
       Instant.now(),
       "fallback"

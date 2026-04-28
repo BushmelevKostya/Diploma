@@ -5,11 +5,10 @@ import type { SnapshotResponse, VmResponse } from '../../types/api';
 
 interface Props {
   selectedVm?: VmResponse;
-  referenceSnapshot?: SnapshotResponse | null;
   onChanged: () => Promise<void>;
 }
 
-export function SnapshotSection({ selectedVm, referenceSnapshot, onChanged }: Props): JSX.Element {
+export function SnapshotSection({ selectedVm, onChanged }: Props): JSX.Element {
   const [items, setItems] = useState<SnapshotResponse[]>([]);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
@@ -72,25 +71,12 @@ export function SnapshotSection({ selectedVm, referenceSnapshot, onChanged }: Pr
     }
   };
 
-  const markReference = async (snapshotId: string): Promise<void> => {
-    setBusy(true);
-    try {
-      await api.setReferenceSnapshot(snapshotId);
-      await load();
-      await onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <section className="panel">
       <div className="panel-head">
         <h2>Снапшоты VM</h2>
       </div>
       <p className="hint">Выбранная VM: <strong>{selectedVm?.name ?? 'не выбрана'}</strong></p>
-
-      <p className="hint">Эталонный snapshot: <strong>{referenceSnapshot?.name ?? 'не задан'}</strong></p>
 
       <div className="inline-form">
         <input
@@ -113,47 +99,36 @@ export function SnapshotSection({ selectedVm, referenceSnapshot, onChanged }: Pr
       <div className="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
           </thead>
           <tbody>
-            {items.map((snapshot) => (
-              <tr key={snapshot.id}>
-                <td>
-                  {snapshot.name}
-                  {snapshot.referenceSnapshot && <span className="sub">reference snapshot</span>}
-                  {snapshot.profileCaptured === false && <span className="sub">profile not captured</span>}
-                </td>
-                <td><StatusBadge status={snapshot.status} /></td>
-                <td>{snapshot.createdAt ? new Date(snapshot.createdAt).toLocaleString() : '-'}</td>
-                <td className="actions">
-                  <button
-                    className="btn"
-                    onClick={() => void markReference(snapshot.id)}
-                    disabled={busy || snapshot.profileCaptured === false}
-                  >
-                    Set Reference
-                  </button>
-                  <button className="btn btn-secondary" onClick={() => void restore(snapshot.id)} disabled={busy}>
-                    Restore
-                  </button>
-                  <button className="btn btn-danger" onClick={() => void remove(snapshot.id)} disabled={busy}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={4} className="empty">
-                  Нет снапшотов для выбранной VM
-                </td>
-              </tr>
-            )}
+          {items.map((snapshot) => (
+            <tr key={snapshot.id}>
+              <td>{snapshot.name}</td>
+              <td><StatusBadge status={snapshot.status} /></td>
+              <td>{snapshot.createdAt ? new Date(snapshot.createdAt).toLocaleString() : '-'}</td>
+              <td className="actions">
+                <button className="btn btn-secondary" onClick={() => void restore(snapshot.id)} disabled={busy}>
+                  Restore
+                </button>
+                <button className="btn btn-danger" onClick={() => void remove(snapshot.id)} disabled={busy}>
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))}
+          {items.length === 0 && (
+            <tr>
+              <td colSpan={4} className="empty">
+                Нет снапшотов для выбранной VM
+              </td>
+            </tr>
+          )}
           </tbody>
         </table>
       </div>

@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import { StatusBadge } from '../common/StatusBadge';
-import type { DriftReportResponse, SnapshotResponse, VmResponse } from '../../types/api';
+import type { DriftReportResponse, VmResponse } from '../../types/api';
 
 interface Props {
   vmList: VmResponse[];
   reports: DriftReportResponse[];
   selectedVmId?: string;
-  referenceSnapshot?: SnapshotResponse | null;
   onChanged: () => Promise<void>;
 }
 
-export function DriftSection({ vmList, reports, selectedVmId, referenceSnapshot, onChanged }: Props): JSX.Element {
+export function DriftSection({ vmList, reports, selectedVmId, onChanged }: Props): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
 
@@ -31,34 +30,13 @@ export function DriftSection({ vmList, reports, selectedVmId, referenceSnapshot,
     }
   };
 
-  const runReferenceDrift = async (): Promise<void> => {
-    if (!selectedVm || !referenceSnapshot) {
-      return;
-    }
-
-    setBusy(true);
-    try {
-      await api.checkReferenceDrift(selectedVm.id);
-      await onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <section className="panel">
       <div className="panel-head">
         <h2>Drift detection</h2>
         <div className="actions">
           <button className="btn" onClick={() => void runDrift()} disabled={!selectedVm || busy}>
-          {busy ? 'Проверка...' : 'Запустить проверку'}
-        </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => void runReferenceDrift()}
-            disabled={!selectedVm || !referenceSnapshot || busy}
-          >
-            Сравнить с эталоном
+            {busy ? 'Проверка...' : 'Запустить проверку'}
           </button>
         </div>
       </div>
@@ -67,84 +45,80 @@ export function DriftSection({ vmList, reports, selectedVmId, referenceSnapshot,
         Активная VM: <strong>{selectedVm?.name ?? 'не выбрана'}</strong>
       </div>
 
-      <div className="hint">
-        Эталон: <strong>{referenceSnapshot?.name ?? 'не задан'}</strong>
-      </div>
-
       <div className="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th>VM</th>
-              <th>Статус</th>
-              <th>Diff</th>
-              <th>Checked at</th>
-            </tr>
+          <tr>
+            <th>VM</th>
+            <th>Статус</th>
+            <th>Diff</th>
+            <th>Checked at</th>
+          </tr>
           </thead>
           <tbody>
-            {reports.map((report) => (
-              <>
-                <tr 
-                  key={report.id} 
-                  className="drift-row-clickable" 
-                  onClick={() => setExpandedReportId(expandedReportId === report.id ? null : report.id)}
-                >
-                  <td style={{ cursor: 'pointer' }}>
-                    {expandedReportId === report.id ? '▼' : '▶'} {report.vmName ?? report.vmId}
-                  </td>
-                  <td>
-                    <StatusBadge status={report.status} />
-                  </td>
-                  <td style={{ cursor: 'pointer' }}>
-                    {report.differences?.length ?? 0} расхождений
-                  </td>
-                  <td>{report.checkedAt ? new Date(report.checkedAt).toLocaleString() : '-'}</td>
-                </tr>
-                {expandedReportId === report.id && report.differences && report.differences.length > 0 && (
-                  <tr key={`${report.id}-details`} className="drift-details-row">
-                    <td colSpan={4}>
-                      <div className="drift-details-content">
-                        <h4>Расхождения конфигурации:</h4>
-                        <table className="diff-table">
-                          <thead>
-                            <tr>
-                              <th>Параметр</th>
-                              <th>Ожидалось</th>
-                              <th>Фактически</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {report.differences.map((diff, idx) => (
-                              <tr key={idx}>
-                                <td className="field-name">{diff.field}</td>
-                                <td className="expected-value">{diff.expected}</td>
-                                <td className="actual-value">{diff.actual}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                {expandedReportId === report.id && (!report.differences || report.differences.length === 0) && (
-                  <tr key={`${report.id}-clean`} className="drift-details-row">
-                    <td colSpan={4}>
-                      <div className="drift-details-content">
-                        <p style={{ color: '#28a745', fontSize: '0.9rem' }}>✓ Конфигурация соответствует ожидаемому состоянию</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </>
-            ))}
-            {reports.length === 0 && (
-              <tr>
-                <td colSpan={4} className="empty">
-                  Drift-отчётов пока нет
+          {reports.map((report) => (
+            <>
+              <tr
+                key={report.id}
+                className="drift-row-clickable"
+                onClick={() => setExpandedReportId(expandedReportId === report.id ? null : report.id)}
+              >
+                <td style={{ cursor: 'pointer' }}>
+                  {expandedReportId === report.id ? '▼' : '▶'} {report.vmName ?? report.vmId}
                 </td>
+                <td>
+                  <StatusBadge status={report.status} />
+                </td>
+                <td style={{ cursor: 'pointer' }}>
+                  {report.differences?.length ?? 0} расхождений
+                </td>
+                <td>{report.checkedAt ? new Date(report.checkedAt).toLocaleString() : '-'}</td>
               </tr>
-            )}
+              {expandedReportId === report.id && report.differences && report.differences.length > 0 && (
+                <tr key={`${report.id}-details`} className="drift-details-row">
+                  <td colSpan={4}>
+                    <div className="drift-details-content">
+                      <h4>Расхождения конфигурации:</h4>
+                      <table className="diff-table">
+                        <thead>
+                        <tr>
+                          <th>Параметр</th>
+                          <th>Ожидалось</th>
+                          <th>Фактически</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {report.differences.map((diff, idx) => (
+                          <tr key={idx}>
+                            <td className="field-name">{diff.field}</td>
+                            <td className="expected-value">{diff.expected}</td>
+                            <td className="actual-value">{diff.actual}</td>
+                          </tr>
+                        ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {expandedReportId === report.id && (!report.differences || report.differences.length === 0) && (
+                <tr key={`${report.id}-clean`} className="drift-details-row">
+                  <td colSpan={4}>
+                    <div className="drift-details-content">
+                      <p style={{ color: '#28a745', fontSize: '0.9rem' }}>✓ Конфигурация соответствует ожидаемому состоянию</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </>
+          ))}
+          {reports.length === 0 && (
+            <tr>
+              <td colSpan={4} className="empty">
+                Drift-отчётов пока нет
+              </td>
+            </tr>
+          )}
           </tbody>
         </table>
       </div>

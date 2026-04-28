@@ -4,14 +4,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record SnapshotResponse(
-    UUID id,
-    String name,
-    String description,
-    SnapshotStatus status,
-    UUID vmId,
-    Long sizeBytes,
-    Boolean referenceSnapshot,
-    Boolean profileCaptured,
-    Instant createdAt
+  UUID id,
+  String name,
+  String description,
+  SnapshotStatus status,
+  UUID vmId,
+  Long sizeBytes,
+  Instant createdAt
 ) {
 }

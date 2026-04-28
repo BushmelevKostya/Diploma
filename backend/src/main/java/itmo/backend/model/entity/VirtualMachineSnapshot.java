@@ -18,164 +18,128 @@ import java.util.UUID;
 @Table(name = "vm_snapshots")
 public class VirtualMachineSnapshot {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.UUID)
+  private UUID id;
 
-    @Column(nullable = false, length = 100)
-    private String name;
+  @Column(nullable = false, length = 100)
+  private String name;
 
-    @Column(length = 500)
-    private String description;
+  @Column(length = 500)
+  private String description;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private SnapshotStatus status;
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 20)
+  private SnapshotStatus status;
 
-    @Column(nullable = false)
-    private UUID vmId;
+  @Column(nullable = false)
+  private UUID vmId;
 
-    @Column(nullable = false)
-    private Long sizeBytes;
+  @Column(nullable = false)
+  private Long sizeBytes;
 
-    @Column(nullable = false, length = 160)
-    private String libvirtSnapshotName;
+  @Column(nullable = false, length = 160)
+  private String libvirtSnapshotName;
 
-    @Column(nullable = false)
-    private Boolean externalSnapshot;
+  @Column(nullable = false)
+  private Boolean externalSnapshot;
 
-    @Column(nullable = false)
-    private Boolean diskOnly;
+  @Column(nullable = false)
+  private Boolean diskOnly;
 
-    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
-    private Boolean referenceSnapshot;
+  @Column(nullable = false, updatable = false)
+  private Instant createdAt;
 
-    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
-    private Boolean profileCaptured;
+  @Column(nullable = false)
+  private Instant updatedAt;
 
-    @Column(length = 12000)
-    private String systemProfileJson;
+  protected VirtualMachineSnapshot() {
+  }
 
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt;
+  public VirtualMachineSnapshot(
+    final String name,
+    final String description,
+    final SnapshotStatus status,
+    final UUID vmId,
+    final Long sizeBytes,
+    final String libvirtSnapshotName,
+    final Boolean externalSnapshot,
+    final Boolean diskOnly
+  ) {
+    this.name = name;
+    this.description = description;
+    this.status = status;
+    this.vmId = vmId;
+    this.sizeBytes = sizeBytes;
+    this.libvirtSnapshotName = libvirtSnapshotName;
+    this.externalSnapshot = externalSnapshot;
+    this.diskOnly = diskOnly;
+  }
 
-    @Column(nullable = false)
-    private Instant updatedAt;
+  @PrePersist
+  protected void onCreate() {
+    createdAt = Instant.now();
+    updatedAt = createdAt;
+  }
 
-    protected VirtualMachineSnapshot() {
-    }
+  @PreUpdate
+  protected void onUpdate() {
+    updatedAt = Instant.now();
+  }
 
-    public VirtualMachineSnapshot(
-        final String name,
-        final String description,
-        final SnapshotStatus status,
-        final UUID vmId,
-        final Long sizeBytes,
-        final String libvirtSnapshotName,
-        final Boolean externalSnapshot,
-        final Boolean diskOnly,
-        final Boolean referenceSnapshot,
-        final Boolean profileCaptured,
-        final String systemProfileJson
-    ) {
-        this.name = name;
-        this.description = description;
-        this.status = status;
-        this.vmId = vmId;
-        this.sizeBytes = sizeBytes;
-        this.libvirtSnapshotName = libvirtSnapshotName;
-        this.externalSnapshot = externalSnapshot;
-        this.diskOnly = diskOnly;
-        this.referenceSnapshot = referenceSnapshot;
-        this.profileCaptured = profileCaptured;
-        this.systemProfileJson = systemProfileJson;
-    }
+  public UUID getId() {
+    return id;
+  }
 
-    @PrePersist
-    protected void onCreate() {
-        createdAt = Instant.now();
-        updatedAt = createdAt;
-    }
+  public String getName() {
+    return name;
+  }
 
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = Instant.now();
-    }
+  public String getDescription() {
+    return description;
+  }
 
-    public UUID getId() {
-        return id;
-    }
+  public SnapshotStatus getStatus() {
+    return status;
+  }
 
-    public String getName() {
-        return name;
-    }
+  public UUID getVmId() {
+    return vmId;
+  }
 
-    public String getDescription() {
-        return description;
-    }
+  public Long getSizeBytes() {
+    return sizeBytes;
+  }
 
-    public SnapshotStatus getStatus() {
-        return status;
-    }
+  public String getLibvirtSnapshotName() {
+    return libvirtSnapshotName;
+  }
 
-    public UUID getVmId() {
-        return vmId;
-    }
+  public Boolean getExternalSnapshot() {
+    return externalSnapshot;
+  }
 
-    public Long getSizeBytes() {
-        return sizeBytes;
-    }
+  public Boolean getDiskOnly() {
+    return diskOnly;
+  }
 
-    public String getLibvirtSnapshotName() {
-        return libvirtSnapshotName;
-    }
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
 
-    public Boolean getExternalSnapshot() {
-        return externalSnapshot;
-    }
+  public Instant getUpdatedAt() {
+    return updatedAt;
+  }
 
-    public Boolean getDiskOnly() {
-        return diskOnly;
-    }
+  public void markReady() {
+    this.status = SnapshotStatus.READY;
+  }
 
-    public Boolean getReferenceSnapshot() {
-        return referenceSnapshot;
-    }
+  public void markRestoring() {
+    this.status = SnapshotStatus.RESTORING;
+  }
 
-    public Boolean getProfileCaptured() {
-        return profileCaptured;
-    }
-
-    public String getSystemProfileJson() {
-        return systemProfileJson;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void markReady() {
-        this.status = SnapshotStatus.READY;
-    }
-
-    public void markRestoring() {
-        this.status = SnapshotStatus.RESTORING;
-    }
-
-    public void markFailed() {
-        this.status = SnapshotStatus.FAILED;
-    }
-
-    public void markReference(final boolean referenceSnapshot) {
-        this.referenceSnapshot = referenceSnapshot;
-    }
-
-    public void updateSystemProfile(final String systemProfileJson, final boolean profileCaptured) {
-        this.systemProfileJson = systemProfileJson;
-        this.profileCaptured = profileCaptured;
-    }
+  public void markFailed() {
+    this.status = SnapshotStatus.FAILED;
+  }
 }

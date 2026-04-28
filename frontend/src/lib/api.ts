@@ -70,27 +70,15 @@ export const api = {
       method: 'POST'
     }),
 
-  checkReferenceDrift: (vmId: string) =>
-    apiRequest<DriftReportResponse>(`/api/v1/vms/${vmId}/reference-drift`, {
-      method: 'POST'
-    }),
-
   listDriftReports: (page = 0, size = 30) =>
     apiRequest<PageDriftReportResponse>(`/api/v1/drift-reports?page=${page}&size=${size}`),
 
   listSnapshots: (vmId: string) => apiRequest<SnapshotResponse[]>(`/api/v1/vms/${vmId}/snapshots`),
 
-  getReferenceSnapshot: () => apiRequest<SnapshotResponse>('/api/v1/snapshots/reference'),
-
   createSnapshot: (vmId: string, payload: CreateSnapshotRequest) =>
     apiRequest<SnapshotResponse>(`/api/v1/vms/${vmId}/snapshots`, {
       method: 'POST',
       body: JSON.stringify(payload)
-    }),
-
-  setReferenceSnapshot: (snapshotId: string) =>
-    apiRequest<SnapshotResponse>(`/api/v1/snapshots/${snapshotId}/reference`, {
-      method: 'POST'
     }),
 
   restoreSnapshot: (vmId: string, snapshotId: string) =>
