@@ -1,6 +1,7 @@
 package itmo.backend.controller;
 
 import itmo.backend.model.dto.monitoring.MonitoringHealthResponse;
+import itmo.backend.model.dto.monitoring.MonitoringOverviewResponse;
 import itmo.backend.model.dto.monitoring.PageMonitoringMetricResponse;
 import itmo.backend.model.dto.vm.MetricType;
 import itmo.backend.services.MonitoringService;
@@ -21,6 +22,11 @@ public class MonitoringController {
 
     public MonitoringController(final MonitoringService monitoringService) {
         this.monitoringService = monitoringService;
+    }
+
+    @GetMapping("/overview")
+    public MonitoringOverviewResponse overview() {
+        return monitoringService.overview();
     }
 
     @GetMapping("/metrics")

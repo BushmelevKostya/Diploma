@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
@@ -178,9 +179,17 @@ public class InfrastructureCommandService {
 
   public void startVm(final String vmName) throws IOException, InterruptedException {
     log.info("Starting VM {} through libvirt", vmName);
-    runInRepo("virsh-start-" + vmName,
-      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh start %s"
-        .formatted(infraProperties.getVirtualizationHost(), shellEscape(vmName)));
+    try {
+      runInRepo("virsh-start-" + vmName,
+        "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh start %s"
+          .formatted(infraProperties.getVirtualizationHost(), shellEscape(vmName)));
+    } catch (final IOException exception) {
+      if (exception.getMessage() != null && exception.getMessage().contains("already active")) {
+        log.info("VM {} is already active, continuing", vmName);
+        return;
+      }
+      throw exception;
+    }
   }
 
   public void stopVm(final String vmName) throws IOException, InterruptedException {
@@ -216,84 +225,14 @@ public class InfrastructureCommandService {
   public void restoreExternalDiskSnapshot(final String vmName, final String snapshotName)
     throws IOException, InterruptedException {
     log.info("Restoring VM {} from external disk-only snapshot {}", vmName, snapshotName);
-    runInRepo("virsh-snapshot-restore-" + vmName + "-" + snapshotName,
-      """
-        ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- bash -lc '
-          set -euo pipefail
-          VM_NAME='\''%s'\''
-          SNAPSHOT_NAME='\''%s'\''
+    String command = String.format(
+      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh snapshot-revert %s %s --force",
+      infraProperties.getVirtualizationHost(),
+      shellEscape(vmName),
+      shellEscape(snapshotName)
+    );
 
-          CURRENT_STATE="$(virsh domstate "$VM_NAME" 2>/dev/null || true)"
-          case "$CURRENT_STATE" in
-            running*|paused*|pmsuspended*|in\\ shutdown)
-              virsh destroy "$VM_NAME" >/dev/null
-              ;;
-          esac
-
-          SNAPSHOT_DISK="$(virsh snapshot-dumpxml "$VM_NAME" "$SNAPSHOT_NAME" | awk -F"'"'"'" '
-            /<disk name=.vda./ && /<source file=/ {
-              for (i = 1; i <= NF; i++) {
-                if ($(i - 1) ~ /file=/) {
-                  print $i
-                  exit
-                }
-              }
-            }'
-          )"
-          if [[ -z "$SNAPSHOT_DISK" ]]; then
-            echo "Unable to resolve snapshot disk for $VM_NAME/$SNAPSHOT_NAME" >&2
-            exit 1
-          fi
-
-          RESTORE_TARGET="$(qemu-img info "$SNAPSHOT_DISK" | awk -F": " '
-            /backing file:/ {
-              sub(/ \\(.*/, "", $2)
-              print $2
-              exit
-            }'
-          )"
-          if [[ -z "$RESTORE_TARGET" ]]; then
-            echo "Unable to resolve backing file for snapshot disk $SNAPSHOT_DISK" >&2
-            exit 1
-          fi
-
-          DOMAIN_XML="$(mktemp)"
-          UPDATED_XML="$(mktemp)"
-          trap "rm -f \\"$DOMAIN_XML\\" \\"$UPDATED_XML\\"" EXIT
-          virsh dumpxml "$VM_NAME" > "$DOMAIN_XML"
-
-          awk -v restore_target="$RESTORE_TARGET" '
-            /<disk type=.file. device=.disk.>/ {
-              in_disk = 1
-              target_vda = 0
-            }
-            in_disk && /<target dev=.vda./ {
-              target_vda = 1
-            }
-            in_disk && target_vda && /<source file=/ && !updated {
-              sub(/file=.([^"'"'"'"'"'"']+)./, "file=\\047" restore_target "\\047")
-              updated = 1
-            }
-            in_disk && /<\\/disk>/ {
-              in_disk = 0
-              target_vda = 0
-            }
-            {
-              print
-            }
-            END {
-              if (!updated) {
-                exit 1
-              }
-            }' "$DOMAIN_XML" > "$UPDATED_XML"
-
-          virsh define "$UPDATED_XML" >/dev/null
-        '
-        """.formatted(
-        infraProperties.getVirtualizationHost(),
-        shellEscape(vmName),
-        shellEscape(snapshotName)
-      ));
+    runInRepo("virsh-snapshot-restore-" + vmName + "-" + snapshotName, command);
   }
 
   public void deleteSnapshotMetadata(final String vmName, final String snapshotName)
@@ -306,6 +245,77 @@ public class InfrastructureCommandService {
           shellEscape(vmName),
           shellEscape(snapshotName)
         ));
+  }
+
+  public String runOnVirtualizationHostAndCapture(final String commandName, final String remoteCommand)
+    throws IOException, InterruptedException {
+    final String sshCommand = "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 %s@%s -- bash -s"
+      .formatted(
+        shellEscape(infraProperties.getVirtualizationUser()),
+        infraProperties.getVirtualizationHost()
+      );
+    log.info("monitoring/remote script length={} bytes", remoteCommand.getBytes(StandardCharsets.UTF_8).length);
+    return runAndCaptureWithStdin(commandName, sshCommand, remoteCommand);
+  }
+
+  private String runAndCaptureWithStdin(final String commandName, final String command, final String stdinContent)
+    throws IOException, InterruptedException {
+    final CommandResult result = executeWithStdin(commandName, command, stdinContent);
+    if (result.exitCode() != 0) {
+      log.error("Infrastructure command {} with captured output failed with exit code {}. stderr: {}",
+        commandName, result.exitCode(), summarize(result.stderr()));
+      throw new IOException(("Command failed with exit code " + result.exitCode()
+        + "\n" + result.stdout() + "\n" + result.stderr()).trim());
+    }
+    if (!result.stderr().isBlank()) {
+      log.warn("Infrastructure command {} produced stderr (exit=0): {}", commandName, summarize(result.stderr()));
+    }
+    return result.stdout();
+  }
+
+  private CommandResult executeWithStdin(final String commandName, final String command, final String stdinContent)
+    throws IOException, InterruptedException {
+    log.info("Executing infrastructure command [{}] with stdin: {}", commandName, summarize(command));
+    final Process process = buildProcess(command).start();
+
+    try (var os = process.getOutputStream()) {
+      if (stdinContent != null) {
+        os.write(stdinContent.getBytes(StandardCharsets.UTF_8));
+      }
+      os.flush();
+    } catch (final IOException ioException) {
+      log.warn("Failed to write stdin for command {}: {}", commandName, ioException.getMessage());
+    }
+
+    final StringBuilder stdout = new StringBuilder();
+    final StringBuilder stderr = new StringBuilder();
+
+    final Thread stdoutThread = startStreamLogger(process.getInputStream(), stdout, commandName, false);
+    final Thread stderrThread = startStreamLogger(process.getErrorStream(), stderr, commandName, true);
+
+    final long startedAt = System.nanoTime();
+    final int progressInterval = Math.max(1, infraProperties.getCommandProgressLogIntervalSeconds());
+    final int timeoutSeconds = Math.max(progressInterval, infraProperties.getCommandTimeoutSeconds());
+    int elapsedSeconds = 0;
+
+    while (!process.waitFor(progressInterval, TimeUnit.SECONDS)) {
+      elapsedSeconds += progressInterval;
+      log.info("Infrastructure command [{}] is still running after {} second(s)", commandName, elapsedSeconds);
+      if (elapsedSeconds >= timeoutSeconds) {
+        process.destroyForcibly();
+        joinStreamThread(stdoutThread);
+        joinStreamThread(stderrThread);
+        throw new IOException("Infrastructure command timed out after " + timeoutSeconds + " seconds: " + commandName);
+      }
+    }
+
+    final int exitCode = process.exitValue();
+    joinStreamThread(stdoutThread);
+    joinStreamThread(stderrThread);
+
+    final long durationSeconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startedAt);
+    log.info("Infrastructure command [{}] finished in {} second(s) with exit code {}", commandName, durationSeconds, exitCode);
+    return new CommandResult(exitCode, stdout.toString(), stderr.toString());
   }
 
   private void runInRepo(final String commandName, final String command) throws IOException, InterruptedException {

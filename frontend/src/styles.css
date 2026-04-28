@@ -340,6 +340,58 @@ tbody tr:hover {
   min-height: 260px;
 }
 
+.monitoring-panel {
+  gap: 1rem;
+}
+
+.monitoring-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.monitoring-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-strong);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.monitoring-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.monitoring-value {
+  font-size: 1.3rem;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.monitoring-sub {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.meter {
+  width: 100%;
+  height: 8px;
+  background: #e7edf1;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1b84bb, #0f7f77);
+  transition: width 180ms ease;
+}
+
+.meter-fill-memory {
+  background: linear-gradient(90deg, #d08a14, #c0463b);
+}
+
 .hint {
   color: var(--muted);
   font-size: 0.83rem;
@@ -381,7 +433,8 @@ tbody tr:hover {
   .status-row,
   .form-grid,
   .option-grid,
-  .inline-form {
+  .inline-form,
+  .monitoring-grid {
     grid-template-columns: 1fr;
   }
 

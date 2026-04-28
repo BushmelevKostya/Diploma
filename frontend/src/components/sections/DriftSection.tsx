@@ -1,20 +1,21 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import { StatusBadge } from '../common/StatusBadge';
-import type { DriftReportResponse, VmResponse } from '../../types/api';
+import type { DriftReportResponse, SnapshotResponse, VmResponse } from '../../types/api';
 
 interface Props {
   vmList: VmResponse[];
   reports: DriftReportResponse[];
   selectedVmId?: string;
+  referenceSnapshot?: SnapshotResponse | null;
   onChanged: () => Promise<void>;
 }
 
-export function DriftSection({ vmList, reports, selectedVmId, onChanged }: Props): JSX.Element {
+export function DriftSection({ vmList, reports, selectedVmId, referenceSnapshot, onChanged }: Props): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
 
-  const selectedVm = vmList.find((vm) => vm.id === selectedVmId) ?? vmList[0];
+  const selectedVm = vmList.find((vm) => vm.id === selectedVmId);
 
   const runDrift = async (): Promise<void> => {
     if (!selectedVm) {
@@ -30,17 +31,44 @@ export function DriftSection({ vmList, reports, selectedVmId, onChanged }: Props
     }
   };
 
+  const runReferenceDrift = async (): Promise<void> => {
+    if (!selectedVm || !referenceSnapshot) {
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await api.checkReferenceDrift(selectedVm.id);
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section className="panel">
       <div className="panel-head">
         <h2>Drift detection</h2>
-        <button className="btn" onClick={() => void runDrift()} disabled={!selectedVm || busy}>
+        <div className="actions">
+          <button className="btn" onClick={() => void runDrift()} disabled={!selectedVm || busy}>
           {busy ? 'Проверка...' : 'Запустить проверку'}
         </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => void runReferenceDrift()}
+            disabled={!selectedVm || !referenceSnapshot || busy}
+          >
+            Сравнить с эталоном
+          </button>
+        </div>
       </div>
 
       <div className="hint">
         Активная VM: <strong>{selectedVm?.name ?? 'не выбрана'}</strong>
+      </div>
+
+      <div className="hint">
+        Эталон: <strong>{referenceSnapshot?.name ?? 'не задан'}</strong>
       </div>
 
       <div className="table-wrap">

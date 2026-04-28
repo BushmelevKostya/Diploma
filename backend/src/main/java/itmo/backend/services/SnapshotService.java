@@ -1,5 +1,6 @@
 package itmo.backend.services;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import itmo.backend.model.dto.snapshot.CreateSnapshotRequest;
 import itmo.backend.model.dto.snapshot.SnapshotResponse;
 import itmo.backend.model.dto.snapshot.SnapshotStatus;
@@ -11,6 +12,7 @@ import itmo.backend.model.exceptions.ApiException;
 import itmo.backend.model.repository.VirtualMachineSnapshotRepository;
 import itmo.backend.model.repository.VirtualMachineRepository;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,15 +26,21 @@ public class SnapshotService {
     private final VirtualMachineRepository virtualMachineRepository;
     private final VirtualMachineSnapshotRepository virtualMachineSnapshotRepository;
     private final InfrastructureCommandService infrastructureCommandService;
+    private final VmStateProfileService vmStateProfileService;
+    private final ObjectMapper objectMapper;
 
     public SnapshotService(
         final VirtualMachineRepository virtualMachineRepository,
         final VirtualMachineSnapshotRepository virtualMachineSnapshotRepository,
-        final InfrastructureCommandService infrastructureCommandService
+        final InfrastructureCommandService infrastructureCommandService,
+        final VmStateProfileService vmStateProfileService,
+        final ObjectMapper objectMapper
     ) {
         this.virtualMachineRepository = virtualMachineRepository;
         this.virtualMachineSnapshotRepository = virtualMachineSnapshotRepository;
         this.infrastructureCommandService = infrastructureCommandService;
+        this.vmStateProfileService = vmStateProfileService;
+        this.objectMapper = objectMapper;
     }
 
     public SnapshotResponse create(final UUID vmId, final CreateSnapshotRequest request) {
@@ -57,11 +65,15 @@ public class SnapshotService {
             snapshotSizeBytes(vm),
             libvirtSnapshotName,
             true,
-            true
+            true,
+            false,
+            false,
+            null
         );
 
         final VirtualMachineSnapshot saved = virtualMachineSnapshotRepository.save(record);
         try {
+            captureSnapshotProfile(vm, saved);
             infrastructureCommandService.createExternalDiskSnapshot(vm.getName(), libvirtSnapshotName);
 
             if (wasRunning) {
@@ -139,6 +151,9 @@ public class SnapshotService {
         virtualMachineSnapshotRepository.save(snapshot);
 
         try {
+            if (wasRunning) {
+                infrastructureCommandService.stopVm(vm.getName());
+            }
             infrastructureCommandService.restoreExternalDiskSnapshot(vm.getName(), snapshot.getLibvirtSnapshotName());
             if (wasRunning) {
                 infrastructureCommandService.startVm(vm.getName());
@@ -164,6 +179,29 @@ public class SnapshotService {
         }
     }
 
+    public SnapshotResponse markReference(final UUID snapshotId) {
+        final VirtualMachineSnapshot snapshot = virtualMachineSnapshotRepository.findById(snapshotId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Snapshot not found"));
+
+        if (!Boolean.TRUE.equals(snapshot.getProfileCaptured())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Snapshot has no captured system profile and cannot be used as reference");
+        }
+
+        for (final VirtualMachineSnapshot referenceSnapshot : virtualMachineSnapshotRepository.findAllByReferenceSnapshotTrue()) {
+            referenceSnapshot.markReference(false);
+            virtualMachineSnapshotRepository.save(referenceSnapshot);
+        }
+
+        snapshot.markReference(true);
+        return toResponse(virtualMachineSnapshotRepository.save(snapshot));
+    }
+
+    public SnapshotResponse getReference() {
+        final VirtualMachineSnapshot snapshot = virtualMachineSnapshotRepository.findFirstByReferenceSnapshotTrue()
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reference snapshot not set"));
+        return toResponse(snapshot);
+    }
+
     private VirtualMachine findVm(final UUID vmId) {
         return virtualMachineRepository.findById(vmId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VM not found"));
@@ -187,8 +225,23 @@ public class SnapshotService {
             record.getStatus(),
             record.getVmId(),
             record.getSizeBytes(),
+            record.getReferenceSnapshot(),
+            record.getProfileCaptured(),
             record.getCreatedAt()
         );
+    }
+
+    private void captureSnapshotProfile(final VirtualMachine vm, final VirtualMachineSnapshot snapshot) {
+        try {
+            final Map<String, Object> profile = vmStateProfileService.captureProfile(vm);
+            snapshot.updateSystemProfile(objectMapper.writeValueAsString(profile), true);
+            virtualMachineSnapshotRepository.save(snapshot);
+        } catch (final Exception exception) {
+            log.warn("Failed to capture system profile for snapshot {} of VM {}: {}",
+                snapshot.getLibvirtSnapshotName(), vm.getName(), rootMessage(exception));
+            snapshot.updateSystemProfile(null, false);
+            virtualMachineSnapshotRepository.save(snapshot);
+        }
     }
 
     private long snapshotSizeBytes(final VirtualMachine vm) {

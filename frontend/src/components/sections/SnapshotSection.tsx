@@ -5,9 +5,11 @@ import type { SnapshotResponse, VmResponse } from '../../types/api';
 
 interface Props {
   selectedVm?: VmResponse;
+  referenceSnapshot?: SnapshotResponse | null;
+  onChanged: () => Promise<void>;
 }
 
-export function SnapshotSection({ selectedVm }: Props): JSX.Element {
+export function SnapshotSection({ selectedVm, referenceSnapshot, onChanged }: Props): JSX.Element {
   const [items, setItems] = useState<SnapshotResponse[]>([]);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
@@ -36,6 +38,7 @@ export function SnapshotSection({ selectedVm }: Props): JSX.Element {
       setName('');
       setDescription('');
       await load();
+      await onChanged();
     } finally {
       setBusy(false);
     }
@@ -49,6 +52,7 @@ export function SnapshotSection({ selectedVm }: Props): JSX.Element {
     try {
       await api.restoreSnapshot(selectedVm.id, snapshotId);
       await load();
+      await onChanged();
     } finally {
       setBusy(false);
     }
@@ -62,6 +66,18 @@ export function SnapshotSection({ selectedVm }: Props): JSX.Element {
     try {
       await api.deleteSnapshot(selectedVm.id, snapshotId);
       await load();
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const markReference = async (snapshotId: string): Promise<void> => {
+    setBusy(true);
+    try {
+      await api.setReferenceSnapshot(snapshotId);
+      await load();
+      await onChanged();
     } finally {
       setBusy(false);
     }
@@ -73,6 +89,8 @@ export function SnapshotSection({ selectedVm }: Props): JSX.Element {
         <h2>Снапшоты VM</h2>
       </div>
       <p className="hint">Выбранная VM: <strong>{selectedVm?.name ?? 'не выбрана'}</strong></p>
+
+      <p className="hint">Эталонный snapshot: <strong>{referenceSnapshot?.name ?? 'не задан'}</strong></p>
 
       <div className="inline-form">
         <input
@@ -105,10 +123,21 @@ export function SnapshotSection({ selectedVm }: Props): JSX.Element {
           <tbody>
             {items.map((snapshot) => (
               <tr key={snapshot.id}>
-                <td>{snapshot.name}</td>
+                <td>
+                  {snapshot.name}
+                  {snapshot.referenceSnapshot && <span className="sub">reference snapshot</span>}
+                  {snapshot.profileCaptured === false && <span className="sub">profile not captured</span>}
+                </td>
                 <td><StatusBadge status={snapshot.status} /></td>
                 <td>{snapshot.createdAt ? new Date(snapshot.createdAt).toLocaleString() : '-'}</td>
                 <td className="actions">
+                  <button
+                    className="btn"
+                    onClick={() => void markReference(snapshot.id)}
+                    disabled={busy || snapshot.profileCaptured === false}
+                  >
+                    Set Reference
+                  </button>
                   <button className="btn btn-secondary" onClick={() => void restore(snapshot.id)} disabled={busy}>
                     Restore
                   </button>
