@@ -8,11 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface VirtualMachineSnapshotRepository extends JpaRepository<VirtualMachineSnapshot, UUID> {
 
-    List<VirtualMachineSnapshot> findAllByVmIdOrderByCreatedAtDesc(UUID vmId);
+  List<VirtualMachineSnapshot> findAllByVmIdOrderByCreatedAtDesc(UUID vmId);
 
-    Optional<VirtualMachineSnapshot> findByIdAndVmId(UUID id, UUID vmId);
-
-    Optional<VirtualMachineSnapshot> findFirstByReferenceSnapshotTrue();
-
-    List<VirtualMachineSnapshot> findAllByReferenceSnapshotTrue();
+  Optional<VirtualMachineSnapshot> findByIdAndVmId(UUID id, UUID vmId);
 }

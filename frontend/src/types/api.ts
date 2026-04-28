@@ -77,8 +77,6 @@ export interface SnapshotResponse {
   status: SnapshotStatus;
   vmId: string;
   sizeBytes?: number;
-  referenceSnapshot?: boolean;
-  profileCaptured?: boolean;
   createdAt?: string;
 }
 
@@ -117,6 +115,9 @@ export interface MonitoringOverviewResponse {
   memoryTotalMb: number;
   memoryUsedMb: number;
   memoryUsagePercent: number;
+  diskTotalBytes: number;
+  diskUsedBytes: number;
+  diskUsagePercent: number;
   collectedAt: string;
   source: string;
 }

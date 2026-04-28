@@ -8,7 +8,7 @@ import { DriftSection } from './components/sections/DriftSection';
 import { SnapshotSection } from './components/sections/SnapshotSection';
 import { TerminalSection } from './components/sections/TerminalSection';
 import { MonitoringSection } from './components/sections/MonitoringSection';
-import type { DriftReportResponse, SnapshotResponse, VmResponse, MonitoringOverviewResponse } from './types/api';
+import type { DriftReportResponse, VmResponse, MonitoringOverviewResponse } from './types/api';
 
 interface HealthInfo {
   status: string;
@@ -25,7 +25,6 @@ export function App(): JSX.Element {
   const [vmList, setVmList] = useState<VmResponse[]>([]);
   const [selectedVmId, setSelectedVmId] = useState<string | undefined>();
   const [driftReports, setDriftReports] = useState<DriftReportResponse[]>([]);
-  const [referenceSnapshot, setReferenceSnapshot] = useState<SnapshotResponse | null>(null);
   const [monitoringOverview, setMonitoringOverview] = useState<MonitoringOverviewResponse | null>(null);
   const [health, setHealth] = useState<HealthInfo | null>(null);
 
@@ -47,15 +46,6 @@ export function App(): JSX.Element {
         api.listDriftReports(0, 50),
         api.monitoringOverview()
       ]);
-      let currentReferenceSnapshot: SnapshotResponse | null = null;
-      try {
-        currentReferenceSnapshot = await api.getReferenceSnapshot();
-      } catch (referenceError) {
-        const message = referenceError instanceof Error ? referenceError.message : '';
-        if (!message.includes('Reference snapshot not set')) {
-          throw referenceError;
-        }
-      }
 
       setHealth({
         status: healthData.status,
@@ -64,7 +54,6 @@ export function App(): JSX.Element {
       });
       setVmList(vmData.content);
       setDriftReports(driftData.content);
-      setReferenceSnapshot(currentReferenceSnapshot);
       setMonitoringOverview(monitoringData);
       setSelectedVmId((currentSelectedVmId) => {
         if (vmData.content.length === 0) {
@@ -134,7 +123,6 @@ export function App(): JSX.Element {
     setToken(null);
     setVmList([]);
     setDriftReports([]);
-    setReferenceSnapshot(null);
     setMonitoringOverview(null);
     setSelectedVmId(undefined);
   };
@@ -221,13 +209,12 @@ export function App(): JSX.Element {
           vmList={vmList}
           reports={driftReports}
           selectedVmId={selectedVmId}
-          referenceSnapshot={referenceSnapshot}
           onChanged={loadData}
         />
       </div>
 
       <div className="grid-two">
-        <SnapshotSection selectedVm={selectedVm} referenceSnapshot={referenceSnapshot} onChanged={loadData} />
+        <SnapshotSection selectedVm={selectedVm} onChanged={loadData} />
         <TerminalSection selectedVm={selectedVm} />
       </div>
     </main>
