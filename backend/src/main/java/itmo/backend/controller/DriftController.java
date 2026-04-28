@@ -28,6 +28,11 @@ public class DriftController {
         return driftService.createReport(vmId);
     }
 
+    @PostMapping("/vms/{vmId}/reference-drift")
+    public DriftReportResponse createReferenceComparisonReport(@PathVariable final UUID vmId) {
+        return driftService.createReferenceComparisonReport(vmId);
+    }
+
     @GetMapping("/drift-reports")
     public PageDriftReportResponse list(
         @RequestParam(defaultValue = "0") final int page,

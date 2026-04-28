@@ -5,6 +5,7 @@ import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
@@ -64,7 +65,7 @@ public class VirtualMachine {
     @Column(nullable = false)
     private String osImage;
 
-    @ElementCollection(targetClass = EnvironmentPackage.class)
+    @ElementCollection(fetch = FetchType.EAGER, targetClass = EnvironmentPackage.class)
     @CollectionTable(name = "virtual_machine_environment_packages", joinColumns = @JoinColumn(name = "vm_id"))
     @Column(name = "environment_package", nullable = false, length = 32)
     @Enumerated(EnumType.STRING)

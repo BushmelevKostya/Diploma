@@ -466,6 +466,44 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/snapshots/reference:
+    get:
+      tags: [Snapshots]
+      summary: Получить текущий эталонный snapshot
+      responses:
+        '200':
+          description: Эталонный snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResponse'
+        '404':
+          description: Эталон не задан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/snapshots/{id}/reference:
+    post:
+      tags: [Snapshots]
+      summary: Назначить snapshot эталонным
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Snapshot назначен эталонным
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResponse'
+        '400':
+          description: Snapshot нельзя использовать как эталон
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # ======================== DRIFT ========================
   /api/v1/vms/{vmId}/drift:
     post:
@@ -482,6 +520,26 @@ paths:
                 $ref: '#/components/schemas/DriftReportResponse'
         '404':
           description: VM не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/vms/{vmId}/reference-drift:
+    post:
+      tags: [Drift]
+      summary: Сравнить VM с эталонным snapshot
+      parameters:
+        - $ref: '#/components/parameters/VmIdParam'
+      responses:
+        '201':
+          description: Сравнение с эталоном выполнено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriftReportResponse'
+        '404':
+          description: VM или эталонный snapshot не найдены
           content:
             application/json:
               schema:
@@ -1349,6 +1407,10 @@ components:
         sizeBytes:
           type: integer
           format: int64
+        referenceSnapshot:
+          type: boolean
+        profileCaptured:
+          type: boolean
         createdAt:
           type: string
           format: date-time

@@ -1,5 +1,7 @@
 package itmo.backend.services;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import itmo.backend.model.dto.drift.DriftDifference;
 import itmo.backend.model.dto.drift.DriftReportResponse;
 import itmo.backend.model.dto.drift.DriftStatus;
@@ -7,13 +9,15 @@ import itmo.backend.model.dto.drift.PageDriftReportResponse;
 import itmo.backend.model.dto.drift.PageInfo;
 import itmo.backend.model.dto.vm.EnvironmentPackage;
 import itmo.backend.model.entity.VirtualMachine;
+import itmo.backend.model.entity.VirtualMachineSnapshot;
 import itmo.backend.model.entity.VmStatus;
 import itmo.backend.model.exceptions.ApiException;
+import itmo.backend.model.repository.VirtualMachineSnapshotRepository;
 import itmo.backend.model.repository.VirtualMachineRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,15 +30,24 @@ import org.springframework.stereotype.Service;
 public class DriftService {
 
     private final VirtualMachineRepository virtualMachineRepository;
+    private final VirtualMachineSnapshotRepository virtualMachineSnapshotRepository;
     private final InfrastructureCommandService infrastructureCommandService;
+    private final VmStateProfileService vmStateProfileService;
+    private final ObjectMapper objectMapper;
     private final Map<UUID, DriftRecord> reports = new ConcurrentHashMap<>();
 
     public DriftService(
         final VirtualMachineRepository virtualMachineRepository,
-        final InfrastructureCommandService infrastructureCommandService
+        final VirtualMachineSnapshotRepository virtualMachineSnapshotRepository,
+        final InfrastructureCommandService infrastructureCommandService,
+        final VmStateProfileService vmStateProfileService,
+        final ObjectMapper objectMapper
     ) {
         this.virtualMachineRepository = virtualMachineRepository;
+        this.virtualMachineSnapshotRepository = virtualMachineSnapshotRepository;
         this.infrastructureCommandService = infrastructureCommandService;
+        this.vmStateProfileService = vmStateProfileService;
+        this.objectMapper = objectMapper;
     }
 
     public DriftReportResponse createReport(final UUID vmId) {
@@ -58,6 +71,46 @@ public class DriftService {
 
         reports.put(record.id(), record);
         return toResponse(record);
+    }
+
+    public DriftReportResponse createReferenceComparisonReport(final UUID vmId) {
+        final VirtualMachine vm = findVm(vmId);
+        final VirtualMachineSnapshot referenceSnapshot = virtualMachineSnapshotRepository.findFirstByReferenceSnapshotTrue()
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reference snapshot not set"));
+
+        if (!Boolean.TRUE.equals(referenceSnapshot.getProfileCaptured()) || referenceSnapshot.getSystemProfileJson() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Reference snapshot has no captured system profile");
+        }
+
+        try {
+            final Map<String, Object> expectedState = objectMapper.readValue(
+                referenceSnapshot.getSystemProfileJson(),
+                new TypeReference<LinkedHashMap<String, Object>>() { }
+            );
+            final Map<String, Object> actualState = vmStateProfileService.captureProfile(vm);
+            expectedState.put("referenceSnapshot", referenceSnapshot.getName());
+            final List<DriftDifference> differences = differences(expectedState, actualState);
+            final DriftStatus status = differences.isEmpty() ? DriftStatus.CLEAN : DriftStatus.DRIFTED;
+
+            final DriftRecord record = new DriftRecord(
+                UUID.randomUUID(),
+                vm.getId(),
+                vm.getName(),
+                status,
+                expectedState,
+                actualState,
+                differences,
+                Instant.now(),
+                Instant.now()
+            );
+
+            reports.put(record.id(), record);
+            return toResponse(record);
+        } catch (final ApiException exception) {
+            throw exception;
+        } catch (final Exception exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Reference comparison failed: " + rootMessage(exception));
+        }
     }
 
     public PageDriftReportResponse list(final Pageable pageable, final DriftStatus status, final UUID vmId) {
@@ -180,6 +233,9 @@ public class DriftService {
     ) {
         final List<DriftDifference> differences = new ArrayList<>();
         for (final String key : expectedState.keySet()) {
+            if ("referenceSnapshot".equals(key)) {
+                continue;
+            }
             final Object expected = expectedState.get(key);
             final Object actual = actualState.get(key);
             if (!String.valueOf(expected).equals(String.valueOf(actual))) {
@@ -187,6 +243,15 @@ public class DriftService {
             }
         }
         return differences;
+    }
+
+    private String rootMessage(final Exception exception) {
+        Throwable current = exception;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        final String message = current.getMessage();
+        return message == null || message.isBlank() ? "unknown error" : message.trim();
     }
 
     private record DriftRecord(

@@ -47,6 +47,15 @@ public class VirtualMachineSnapshot {
     @Column(nullable = false)
     private Boolean diskOnly;
 
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
+    private Boolean referenceSnapshot;
+
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
+    private Boolean profileCaptured;
+
+    @Column(length = 12000)
+    private String systemProfileJson;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -64,7 +73,10 @@ public class VirtualMachineSnapshot {
         final Long sizeBytes,
         final String libvirtSnapshotName,
         final Boolean externalSnapshot,
-        final Boolean diskOnly
+        final Boolean diskOnly,
+        final Boolean referenceSnapshot,
+        final Boolean profileCaptured,
+        final String systemProfileJson
     ) {
         this.name = name;
         this.description = description;
@@ -74,6 +86,9 @@ public class VirtualMachineSnapshot {
         this.libvirtSnapshotName = libvirtSnapshotName;
         this.externalSnapshot = externalSnapshot;
         this.diskOnly = diskOnly;
+        this.referenceSnapshot = referenceSnapshot;
+        this.profileCaptured = profileCaptured;
+        this.systemProfileJson = systemProfileJson;
     }
 
     @PrePersist
@@ -123,6 +138,18 @@ public class VirtualMachineSnapshot {
         return diskOnly;
     }
 
+    public Boolean getReferenceSnapshot() {
+        return referenceSnapshot;
+    }
+
+    public Boolean getProfileCaptured() {
+        return profileCaptured;
+    }
+
+    public String getSystemProfileJson() {
+        return systemProfileJson;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -141,5 +168,14 @@ public class VirtualMachineSnapshot {
 
     public void markFailed() {
         this.status = SnapshotStatus.FAILED;
+    }
+
+    public void markReference(final boolean referenceSnapshot) {
+        this.referenceSnapshot = referenceSnapshot;
+    }
+
+    public void updateSystemProfile(final String systemProfileJson, final boolean profileCaptured) {
+        this.systemProfileJson = systemProfileJson;
+        this.profileCaptured = profileCaptured;
     }
 }

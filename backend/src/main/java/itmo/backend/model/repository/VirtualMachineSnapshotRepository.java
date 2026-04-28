@@ -11,4 +11,8 @@ public interface VirtualMachineSnapshotRepository extends JpaRepository<VirtualM
     List<VirtualMachineSnapshot> findAllByVmIdOrderByCreatedAtDesc(UUID vmId);
 
     Optional<VirtualMachineSnapshot> findByIdAndVmId(UUID id, UUID vmId);
+
+    Optional<VirtualMachineSnapshot> findFirstByReferenceSnapshotTrue();
+
+    List<VirtualMachineSnapshot> findAllByReferenceSnapshotTrue();
 }

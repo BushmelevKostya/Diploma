@@ -10,6 +10,8 @@ public record SnapshotResponse(
     SnapshotStatus status,
     UUID vmId,
     Long sizeBytes,
+    Boolean referenceSnapshot,
+    Boolean profileCaptured,
     Instant createdAt
 ) {
 }

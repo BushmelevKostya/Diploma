@@ -76,6 +76,9 @@ export interface SnapshotResponse {
   description?: string;
   status: SnapshotStatus;
   vmId: string;
+  sizeBytes?: number;
+  referenceSnapshot?: boolean;
+  profileCaptured?: boolean;
   createdAt?: string;
 }
 
@@ -106,4 +109,14 @@ export interface ErrorResponse {
   error?: string;
   message?: string;
   path?: string;
+}
+
+export interface MonitoringOverviewResponse {
+  runningVmCount: number;
+  cpuUsagePercent: number;
+  memoryTotalMb: number;
+  memoryUsedMb: number;
+  memoryUsagePercent: number;
+  collectedAt: string;
+  source: string;
 }
