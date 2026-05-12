@@ -9,6 +9,7 @@ terraform {
 
 locals {
   is_alpine = startswith(var.os_image, "alpine")
+  alpine_lab_password = "temppass123"
 
   ubuntu_user_data = <<-EOF
 #cloud-config
@@ -50,21 +51,33 @@ users:
   - name: alpine
     shell: /bin/sh
     lock_passwd: false
-    plain_text_passwd: temppass123
+    plain_text_passwd: ${local.alpine_lab_password}
     ssh_authorized_keys:
       - ${var.ssh_public_key}
 ssh_authorized_keys:
   - ${var.ssh_public_key}
 ssh_pwauth: false
 
+# Let Ansible use doas before sudo is guaranteed (Alpine 3.19+ images often ship without sudo).
+write_files:
+  - path: /etc/doas.d/99-diploma.conf
+    permissions: '0644'
+    content: |
+      permit nopass keepenv alpine as root
+
 runcmd:
-  - [ sh, -c, "apk update || true" ]
-  - [ sh, -c, "apk add --no-cache python3 openssh sudo qemu-guest-agent || true" ]
+  # Prefer a regional mirror (same idea as Ubuntu + Yandex); avoids slow/stuck dl-cdn from lab networks.
+  - [ sh, -c, ". /etc/os-release && ver=v$${VERSION_ID%.*} && printf '%s\\n' \"http://mirror.yandex.ru/mirrors/alpine/$${ver}/main\" \"http://mirror.yandex.ru/mirrors/alpine/$${ver}/community\" > /etc/apk/repositories" ]
+  # "su -" asks for root's password, not alpine's; align root password with alpine for console/rescue (lab only).
+  - [ sh, -c, "echo 'root:${local.alpine_lab_password}' | chpasswd" ]
+  # Retry apk index: early boot can race DNS/mirrors; do not mask failures on the install line.
+  - [ sh, -c, "for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do apk update && break; sleep 3; done" ]
+  - [ sh, -c, "apk add --no-cache doas sudo python3 openssh qemu-guest-agent" ]
+  - [ sh, -c, "echo 'alpine ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/alpine && chmod 0440 /etc/sudoers.d/alpine" ]
   - [ sh, -c, "rc-update add sshd default || true" ]
   - [ sh, -c, "rc-service sshd start || true" ]
   - [ sh, -c, "rc-update add qemu-guest-agent default || true" ]
   - [ sh, -c, "rc-service qemu-guest-agent start || true" ]
-  - [ sh, -c, "echo 'alpine ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/alpine && chmod 0440 /etc/sudoers.d/alpine" ]
 EOF
 
   selected_user_data = local.is_alpine ? local.alpine_user_data : local.ubuntu_user_data
@@ -78,10 +91,13 @@ ethernets:
     dhcp4: true
 EOF
 
+  # Match virtio predictable names (enp*, ens*) and classic eth0; fixed "eth0" alone often misses DHCP.
   alpine_network_config = <<-EOF
 version: 2
 ethernets:
-  eth0:
+  nic0:
+    match:
+      name: "e*"
     dhcp4: true
 EOF
 
@@ -99,56 +115,129 @@ local-hostname: ${var.name}
 EOF
 }
 
-resource "libvirt_volume" "base" {
-  name   = "${var.name}-base.qcow2"
-  pool   = var.storage_pool
-  source = var.base_image_path
-  format = "qcow2"
+resource "libvirt_volume" "cloudinit" {
+  name = "${var.name}-cloudinit.iso"
+  pool = var.storage_pool
+
+  lifecycle {
+    ignore_changes = [create]
+  }
+
+  create = {
+    content = {
+      url = libvirt_cloudinit_disk.init.path
+    }
+  }
 }
 
-resource "libvirt_volume" "root" {
-  name           = "${var.name}.qcow2"
-  pool           = var.storage_pool
-  base_volume_id = libvirt_volume.base.id
-  size           = var.disk_size_gb * 1024 * 1024 * 1024
-  format         = "qcow2"
+resource "libvirt_volume" "disk" {
+  name     = "${var.name}-disk.qcow2"
+  pool     = var.storage_pool
+  capacity = var.disk_size_gb * 1024 * 1024 * 1024
+  target = {
+    permissions = {
+      mode = "666"
+    }
+    format = {
+      type = "qcow2"
+    }
+  }
+  backing_store = {
+    path = var.base_image_path
+    format = {
+      type = "qcow2"
+    }
+  }
 }
 
 resource "libvirt_domain" "vm" {
-  name      = var.name
-  memory    = var.memory
-  vcpu      = var.vcpu
-  autostart = true
+  name    = var.name
+  memory  = var.memory
+  vcpu    = var.vcpu
+  running = true
+  type    = "kvm"
 
-  cloudinit = libvirt_cloudinit_disk.init.id
-
-  network_interface {
-    network_name   = var.network_name
-    wait_for_lease = false
+  features = {
+    acpi = true
+    apic = {}
   }
 
-  disk {
-    volume_id = libvirt_volume.root.id
+  os = {
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
   }
 
-  console {
-    type        = "pty"
-    target_type = "serial"
-    target_port = "0"
-  }
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.disk.pool
+            volume = libvirt_volume.disk.name
+          }
+        }
+        target = {
+          bus = "virtio"
+          dev = "vda"
+        }
+        driver = {
+          type = "qcow2"
+        }
+      },
+      {
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit.pool
+            volume = libvirt_volume.cloudinit.name
+          }
+        }
+        target = {
+          bus = "sata"
+          dev = "sda"
+        }
+      }
+    ]
 
-  console {
-    type        = "pty"
-    target_type = "virtio"
-    target_port = "1"
-  }
+    interfaces = [
+      {
+        type = "network"
+        model = {
+          type = "virtio"
+        }
+        source = {
+          network = {
+            network = var.network_name
+          }
+        }
+      }
+    ]
 
-  graphics {
-    type        = "vnc"
-    listen_type = "address"
-  }
+    # virtio channel so libvirt can use qemu-guest-agent (domifaddr --source agent) after cloud-init starts qemu-ga.
+    channels = [
+      {
+        source = {
+          unix = {
+            mode = "bind"
+          }
+        }
+        target = {
+          virt_io = {
+            name = "org.qemu.guest_agent.0"
+          }
+        }
+      }
+    ]
 
-  qemu_agent = true
+    consoles = [
+      {
+        type        = "pty"
+        target_port = "0"
+        target_type = "serial"
+      }
+    ]
+  }
 }
 
 output "id" {

@@ -52,3 +52,4 @@ tofu/id_rsa.pub
 ./project_dump.txt
 ./backend/id_rsa_vm
 ./backend/id_rsa_vm_pem
+ansible/inventory/diploma_ansible_id_rsa
