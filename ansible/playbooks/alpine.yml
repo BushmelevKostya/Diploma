@@ -1,15 +1,33 @@
 ---
 - name: Bootstrap Alpine VM
   hosts: all
-  gather_facts: true
+  gather_facts: false
   become: true
   vars:
     selected_environment_packages: "{{ environment_packages | default([]) }}"
 
+  pre_tasks:
+    - name: Wait for SSH command execution to be ready
+      ansible.builtin.raw: /bin/sh -c 'echo ssh-ready'
+      register: ssh_ready
+      changed_when: false
+      failed_when: false
+      retries: 45
+      delay: 2
+      until: ssh_ready.rc == 0
+      become: false
+
+    # Via sh: bare `command -v` is not a shell builtin over SSH → rc 127 on Busybox.
+    - name: Wait until sudo is available
+      ansible.builtin.raw: /bin/sh -c 'command -v sudo'
+      register: sudo_check
+      changed_when: false
+      retries: 90
+      delay: 2
+      until: sudo_check.rc == 0
+      become: false
+
   tasks:
-    - name: Wait for SSH to be ready
-      ansible.builtin.wait_for_connection:
-        timeout: 120
 
     - name: Ensure base packages are installed
       community.general.apk:
@@ -21,6 +39,9 @@
           - sudo
         update_cache: true
         state: present
+
+    - name: Gather facts
+      ansible.builtin.setup:
 
     - name: Ensure SSH server is installed and running
       community.general.apk:
