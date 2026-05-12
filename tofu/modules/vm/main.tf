@@ -8,7 +8,7 @@ terraform {
 }
 
 locals {
-  is_alpine = startswith(var.os_image, "alpine")
+  is_alpine           = startswith(var.os_image, "alpine")
   alpine_lab_password = "temppass123"
 
   ubuntu_user_data = <<-EOF
@@ -58,6 +58,9 @@ ssh_authorized_keys:
   - ${var.ssh_public_key}
 ssh_pwauth: false
 
+bootcmd:
+  - [ sh, -c, "iface=$(ls /sys/class/net | grep -E '^(eth|en)' | head -1); test -n \"$iface\" || exit 0; printf 'auto lo\\niface lo inet loopback\\n\\nauto %s\\niface %s inet dhcp\\n' \"$iface\" \"$iface\" > /etc/network/interfaces; ip link set \"$iface\" up || true; udhcpc -b -i \"$iface\" || rc-service networking restart || true" ]
+
 # Let Ansible use doas before sudo is guaranteed (Alpine 3.19+ images often ship without sudo).
 write_files:
   - path: /etc/doas.d/99-diploma.conf
@@ -87,11 +90,11 @@ version: 2
 ethernets:
   nic0:
     match:
-      name: "en*"
+      name: "e*"
     dhcp4: true
 EOF
 
-  # Match virtio predictable names (enp*, ens*) and classic eth0; fixed "eth0" alone often misses DHCP.
+  # Match virtio predictable names (enp*, ens*) and classic eth0; fixed names can miss DHCP on alternate images.
   alpine_network_config = <<-EOF
 version: 2
 ethernets:
@@ -118,10 +121,6 @@ EOF
 resource "libvirt_volume" "cloudinit" {
   name = "${var.name}-cloudinit.iso"
   pool = var.storage_pool
-
-  lifecycle {
-    ignore_changes = [create]
-  }
 
   create = {
     content = {
@@ -214,7 +213,6 @@ resource "libvirt_domain" "vm" {
       }
     ]
 
-    # virtio channel so libvirt can use qemu-guest-agent (domifaddr --source agent) after cloud-init starts qemu-ga.
     channels = [
       {
         source = {

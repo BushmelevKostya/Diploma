@@ -154,10 +154,26 @@ public class InfraProperties {
   }
 
   public OsImageDefaults resolveDefaults(final String osImage) {
-    if (osImage == null) {
+    final String normalizedOsImage = normalizeOsImage(osImage);
+    if (normalizedOsImage == null) {
       return null;
     }
-    return osDefaults.get(osImage);
+    return osDefaults.get(normalizedOsImage);
+  }
+
+  public String normalizeOsImage(final String osImage) {
+    if (osImage == null || osImage.isBlank()) {
+      return osImage;
+    }
+
+    final String normalized = osImage.trim().toLowerCase().replace('-', '_').replace('.', '_');
+    if ("ubuntu_22_04".equals(normalized) || "ubuntu2204".equals(normalized)) {
+      return "ubuntu_22_04";
+    }
+    if ("alpine_3_19".equals(normalized) || "alpine319".equals(normalized)) {
+      return "alpine_3_19";
+    }
+    return normalized;
   }
 
   public String resolveSshUser(final String osImage) {

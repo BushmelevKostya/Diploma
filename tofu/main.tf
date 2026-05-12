@@ -67,5 +67,5 @@ module "vms" {
 }
 
 output "vm_ips" {
-  value = { for name, vm in module.vms : name => vm.id }
+  value = { for name, vm in module.vms : name => vm.ip }
 }
