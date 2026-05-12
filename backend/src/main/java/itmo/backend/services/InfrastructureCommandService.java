@@ -93,22 +93,34 @@ public class InfrastructureCommandService {
     log.info("Running OpenTofu apply for desired state");
     runInRepo("opentofu-apply", """
       set -euo pipefail
+      %s
       export TF_CLI_CONFIG_FILE='%s/tofu/tofu.rc'
       cd '%s/tofu'
       %s init -input=false
-      %s apply -auto-approve -input=false -var-file='generated/vms.auto.tfvars.json'
-      """.formatted(repoRootForShell(), repoRootForShell(), infraProperties.getTofuCommand(), infraProperties.getTofuCommand()));
+      %s apply -auto-approve -input=false -parallelism=1 -var-file='generated/vms.auto.tfvars.json'
+      """.formatted(
+      openTofuEnvironmentPrologue(),
+      repoRootForShell(),
+      repoRootForShell(),
+      infraProperties.getTofuCommand(),
+      infraProperties.getTofuCommand()));
   }
 
   public void destroyDesiredState() throws IOException, InterruptedException {
     log.info("Reconciling infrastructure after VM removal");
     runInRepo("opentofu-reconcile", """
       set -euo pipefail
+      %s
       export TF_CLI_CONFIG_FILE='%s/tofu/tofu.rc'
       cd '%s/tofu'
       %s init -input=false
-      %s apply -auto-approve -input=false -var-file='generated/vms.auto.tfvars.json'
-      """.formatted(repoRootForShell(), repoRootForShell(), infraProperties.getTofuCommand(), infraProperties.getTofuCommand()));
+      %s apply -auto-approve -input=false -parallelism=1 -var-file='generated/vms.auto.tfvars.json'
+      """.formatted(
+      openTofuEnvironmentPrologue(),
+      repoRootForShell(),
+      repoRootForShell(),
+      infraProperties.getTofuCommand(),
+      infraProperties.getTofuCommand()));
   }
 
   public String waitForVmIp(final String vmName) throws IOException, InterruptedException {
@@ -362,6 +374,14 @@ public class InfrastructureCommandService {
     final long durationSeconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startedAt);
     log.info("Infrastructure command [{}] finished in {} second(s) with exit code {}", commandName, durationSeconds, exitCode);
     return new CommandResult(exitCode, stdout.toString(), stderr.toString());
+  }
+
+  private static String openTofuEnvironmentPrologue() {
+    return """
+      export XDG_RUNTIME_DIR="$HOME/.cache/opentofu-xdg-runtime"
+      mkdir -p "$XDG_RUNTIME_DIR"
+      chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+      """.strip();
   }
 
   private void runInRepo(final String commandName, final String command) throws IOException, InterruptedException {

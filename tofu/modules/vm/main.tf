@@ -105,10 +105,18 @@ ethernets:
 EOF
 
   selected_network_config = local.is_alpine ? local.alpine_network_config : local.ubuntu_network_config
+
+  # libvirt storage volumes cannot be updated in place. Encode content hash in the volume filename so URL/name
+  # changes always replace the volume (replace_triggered_by on terraform_data.output can be unknown at plan time).
+  cloudinit_volume_replace_key = sha256(join("\n--\n", [
+    local.selected_user_data,
+    local.selected_network_config,
+  ]))
+  cloudinit_iso_basename = "${var.name}-cloudinit-${substr(local.cloudinit_volume_replace_key, 0, 16)}.iso"
 }
 
 resource "libvirt_cloudinit_disk" "init" {
-  name           = "${var.name}-cloudinit.iso"
+  name           = local.cloudinit_iso_basename
   user_data      = local.selected_user_data
   network_config = local.selected_network_config
 
@@ -119,7 +127,7 @@ EOF
 }
 
 resource "libvirt_volume" "cloudinit" {
-  name = "${var.name}-cloudinit.iso"
+  name = local.cloudinit_iso_basename
   pool = var.storage_pool
 
   create = {
@@ -234,6 +242,14 @@ resource "libvirt_domain" "vm" {
         target_port = "0"
         target_type = "serial"
       }
+    ]
+  }
+
+  lifecycle {
+    # In-place domain updates after cloud-init ISO replacement can make dmacvicar/libvirt return a different
+    # numeric `id` than planned ("inconsistent result after apply"). Recreate the domain when the ISO name changes.
+    replace_triggered_by = [
+      libvirt_volume.cloudinit.name,
     ]
   }
 }
