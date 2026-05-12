@@ -52,7 +52,7 @@ export function DriftSection({ vmList, reports, selectedVmId, onChanged }: Props
             <th>VM</th>
             <th>Статус</th>
             <th>Diff</th>
-            <th>Checked at</th>
+            <th>Время проверки</th>
           </tr>
           </thead>
           <tbody>

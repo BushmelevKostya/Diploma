@@ -3,6 +3,8 @@
   hosts: all
   gather_facts: false
   become: true
+  # Alpine cloud images may have doas but not sudo until cloud-final finishes; doas.d is written by cloud-init.
+  become_method: doas
   vars:
     selected_environment_packages: "{{ environment_packages | default([]) }}"
 
@@ -17,14 +19,22 @@
       until: ssh_ready.rc == 0
       become: false
 
-    # Via sh: bare `command -v` is not a shell builtin over SSH → rc 127 on Busybox.
-    - name: Wait until sudo is available
-      ansible.builtin.raw: /bin/sh -c 'command -v sudo'
-      register: sudo_check
+    # Cloud-init may finish openssh/python3 before sudo; doas + /etc/doas.d/99-diploma.conf is applied earlier.
+    - name: Wait until doas or sudo is available
+      ansible.builtin.raw: /bin/sh -c 'test -x /usr/bin/doas || test -x /usr/bin/sudo'
+      register: priv_esc_check
       changed_when: false
       retries: 90
       delay: 2
-      until: sudo_check.rc == 0
+      until: priv_esc_check.rc == 0
+      become: false
+
+    # Never use bare `cloud-init status --wait`: it blocks until "done" and can hang forever if a stage stalls.
+    # BusyBox `timeout` caps the wait; apk task below still retries if the DB lock remains.
+    - name: Bounded wait for cloud-init before apk
+      ansible.builtin.raw: /bin/sh -c 'if test -x /usr/bin/cloud-init && test -x /usr/bin/timeout; then timeout 180 /usr/bin/cloud-init status --wait || true; fi'
+      changed_when: false
+      failed_when: false
       become: false
 
   tasks:
@@ -37,8 +47,13 @@
           - ca-certificates
           - python3
           - sudo
+          - doas
         update_cache: true
         state: present
+      register: apk_base
+      retries: 30
+      delay: 5
+      until: apk_base is success
 
     - name: Gather facts
       ansible.builtin.setup:

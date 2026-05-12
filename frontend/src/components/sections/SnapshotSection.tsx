@@ -74,19 +74,19 @@ export function SnapshotSection({ selectedVm, onChanged }: Props): JSX.Element {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>Снапшоты VM</h2>
+        <h2>Снимки VM</h2>
       </div>
       <p className="hint">Выбранная VM: <strong>{selectedVm?.name ?? 'не выбрана'}</strong></p>
 
       <div className="inline-form">
         <input
-          placeholder="snapshot name"
+          placeholder="название снимка"
           value={name}
           onChange={(event) => setName(event.target.value)}
           disabled={!selectedVm}
         />
         <input
-          placeholder="description"
+          placeholder="описание"
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           disabled={!selectedVm}
@@ -100,10 +100,10 @@ export function SnapshotSection({ selectedVm, onChanged }: Props): JSX.Element {
         <table>
           <thead>
           <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Actions</th>
+            <th>Имя</th>
+            <th>Статус</th>
+            <th>Время создания</th>
+            <th>Действия</th>
           </tr>
           </thead>
           <tbody>

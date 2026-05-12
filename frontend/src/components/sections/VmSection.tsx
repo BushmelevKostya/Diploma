@@ -28,7 +28,7 @@ interface OsProfile {
 
 const OS_PROFILES: Record<OsImage, OsProfile> = {
   ubuntu_22_04: {
-    label: 'Ubuntu 22.04 (1 vCPU, 1024 MB, 10 GB)',
+    label: 'Ubuntu',
     vcpu: 1,
     memoryMb: 1024,
     diskSizeGb: 10,
@@ -36,7 +36,7 @@ const OS_PROFILES: Record<OsImage, OsProfile> = {
     minDiskGb: 5
   },
   alpine_3_19: {
-    label: 'Alpine 3.19 (1 vCPU, 256 MB, 2 GB)',
+    label: 'Alpine',
     vcpu: 1,
     memoryMb: 256,
     diskSizeGb: 2,
@@ -133,7 +133,7 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>Стенды (Virtual Machines)</h2>
+        <h2>Виртуальные машины</h2>
       </div>
 
       <form className="form-grid" onSubmit={onCreate}>
@@ -217,14 +217,13 @@ export function VmSection({ vmList, onChanged, onCreated, onSelectVm, selectedVm
                 />
                 <span>
                   <strong>{option.title}</strong>
-                  <small>{option.description}</small>
                 </span>
               </label>
             ))}
           </div>
         </div>
         <button className="btn" disabled={loading}>
-          {loading ? 'Создание...' : 'Создать стенд'}
+          {loading ? 'Создание...' : 'Создать ВМ'}
         </button>
       </form>
 

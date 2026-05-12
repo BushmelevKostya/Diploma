@@ -32,6 +32,8 @@ public class InfrastructureCommandService {
   private static final String GENERATED_TFVARS_RELATIVE_PATH = "tofu/generated/vms.auto.tfvars.json";
   private static final String ANSIBLE_INVENTORY_RELATIVE_PATH = "ansible/inventory/hosts.yml";
   private static final String WSL_ANSIBLE_PRIVATE_KEY_PATH = "/tmp/diploma_ansible_id_rsa";
+  /** OpenSSH rejects private keys on drvfs (/mnt/c/...) with loose perms; copy here before {@code ssh -i}. */
+  private static final String WSL_LIBVIRT_PRIVATE_KEY_RUNTIME_PATH = "/tmp/diploma_libvirt_id_rsa";
   private static final Pattern WINDOWS_ABSOLUTE_PATH = Pattern.compile("^([A-Za-z]):[\\\\/](.*)$");
 
   private final InfraProperties infraProperties;
@@ -105,12 +107,14 @@ public class InfrastructureCommandService {
   public String waitForVmIp(final String vmName) throws IOException, InterruptedException {
     log.info("Waiting for IP address of VM {}", vmName);
     final Instant deadline = Instant.now().plus(Duration.ofSeconds(infraProperties.getIpWaitTimeoutSeconds()));
+    final String libvirtKeyPrefix = libvirtSshIdentityPrepareAndExport();
 
     while (Instant.now().isBefore(deadline)) {
+      final String virtHostExport =
+        "export VIRT_HOST='" + shellEscape(infraProperties.getVirtualizationHost()) + "' && ";
       final String output = runAndCapture("get-vm-ip-" + vmName, """
-        cd '%s'
-        tr -d '\\r' < ./scripts/get-vm-ip.sh | bash -s -- '%s'
-        """.formatted(repoRootForShell(), shellEscape(vmName)));
+        %s%s cd '%s' && bash ./scripts/get-vm-ip.sh '%s'
+        """.formatted(libvirtKeyPrefix, virtHostExport, repoRootForShell(), shellEscape(vmName)));
 
       final String ipAddress = output.trim();
       if (!ipAddress.isBlank() && !"pending".equalsIgnoreCase(ipAddress)) {
@@ -417,6 +421,32 @@ public class InfrastructureCommandService {
       joiner.add(String.valueOf(value));
     }
     return joiner.toString();
+  }
+
+  /**
+   * For WSL + key on drvfs ({@code /mnt/...}), copies to {@link #WSL_LIBVIRT_PRIVATE_KEY_RUNTIME_PATH} with strict
+   * permissions so OpenSSH accepts {@code -i}; otherwise exports the key path for {@code get-vm-ip.sh}.
+   */
+  private String libvirtSshIdentityPrepareAndExport() {
+    final String path = infraProperties.getVirtualizationPrivateKeyPath();
+    if (path == null || path.isBlank()) {
+      return "";
+    }
+
+    if (!infraProperties.isUseWsl()) {
+      return "export LIBVIRT_SSH_IDENTITY='" + shellEscape(path) + "' && ";
+    }
+
+    final String wslPath = windowsPathToWsl(path);
+    if (wslPath.startsWith("/mnt/")) {
+      return ("install -m 600 '%s' '%s' && export LIBVIRT_SSH_IDENTITY='%s' && ")
+        .formatted(
+          shellEscape(wslPath),
+          shellEscape(WSL_LIBVIRT_PRIVATE_KEY_RUNTIME_PATH),
+          shellEscape(WSL_LIBVIRT_PRIVATE_KEY_RUNTIME_PATH));
+    }
+
+    return "export LIBVIRT_SSH_IDENTITY='" + shellEscape(wslPath) + "' && ";
   }
 
   private String toAnsiblePrivateKeyPathForExecution() {
