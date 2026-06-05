@@ -53,6 +53,7 @@ public class VirtualMachineService {
         final String hostname = request.hostname() == null || request.hostname().isBlank()
             ? request.name()
             : request.hostname();
+        final String osImage = infrastructureCommandService.normalizeOsImage(request.osImage());
         final Set<EnvironmentPackage> environmentPackages = normalizeEnvironmentPackages(request.environmentPackages());
 
         final VirtualMachine vm = new VirtualMachine(
@@ -64,7 +65,7 @@ public class VirtualMachineService {
             request.vcpu(),
             request.memoryMb(),
             request.diskSizeGb(),
-            request.osImage(),
+            osImage,
             environmentPackages,
             null
         );

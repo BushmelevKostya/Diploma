@@ -124,7 +124,7 @@ export function TerminalSection({ selectedVm }: Props): JSX.Element {
           </button>
         </div>
       </div>
-      <p className="hint">WS endpoint: <strong>{WS_BASE_URL}</strong>. VM: <strong>{selectedVm?.name ?? 'не выбрана'}</strong></p>
+      <p className="hint">VM: <strong>{selectedVm?.name ?? 'не выбрана'}</strong></p>
       <div className="terminal-shell" ref={containerRef} />
     </section>
   );
