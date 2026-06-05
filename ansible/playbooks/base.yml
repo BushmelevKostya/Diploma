@@ -125,3 +125,32 @@
           cd /var/www/diploma-empty
           exec python3 -m http.server "$PORT" --bind 0.0.0.0
       when: "'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Install systemd unit for HTTP demo
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/diploma-http-demo.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Diploma HTTP demo (hostname and IP)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=ubuntu
+          Group=ubuntu
+          ExecStart=/usr/local/bin/diploma-http-demo 8080
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+      when: "'HTTP_SERVER' in selected_environment_packages"
+
+    - name: Enable and start HTTP demo service
+      ansible.builtin.systemd:
+        name: diploma-http-demo
+        state: started
+        enabled: true
+        daemon_reload: true
+      when: "'HTTP_SERVER' in selected_environment_packages"

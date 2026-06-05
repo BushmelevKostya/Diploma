@@ -138,11 +138,12 @@
           #!/sbin/openrc-run
           name="diploma-http-demo"
           description="Diploma HTTP demo (returns hostname/ip)"
-          command="/usr/local/bin/diploma-http-demo"
-          command_args="8080"
-          command_background="yes"
-          pidfile="/run/diploma-http-demo.pid"
+          supervisor="supervise-daemon"
+          command="/usr/bin/python3"
+          command_args="-m http.server 8080 --bind 0.0.0.0"
           command_user="alpine"
+          directory="/var/www/diploma-empty"
+          pidfile="/run/diploma-http-demo.pid"
           depend() {
               need net
               after firewall
@@ -156,9 +157,17 @@
       changed_when: "'added' in rc_add_http.stdout"
       failed_when: rc_add_http.rc != 0 and 'already' not in rc_add_http.stderr
 
-    - name: Start HTTP demo service
-      ansible.builtin.command: rc-service diploma-http-demo start
+    # restart: start is a no-op when OpenRC thinks the service is already up (e.g. stale pid), leaving nothing on 8080
+    - name: Restart HTTP demo service
+      ansible.builtin.command: rc-service diploma-http-demo restart
       when: "'HTTP_SERVER' in selected_environment_packages"
-      register: rc_start_http
-      changed_when: "'started' in rc_start_http.stdout"
-      failed_when: rc_start_http.rc != 0 and 'started' not in rc_start_http.stdout
+      register: rc_restart_http
+      changed_when: true
+      failed_when: rc_restart_http.rc != 0
+
+    - name: Wait for HTTP demo to listen on guest
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8080
+        timeout: 45
+      when: "'HTTP_SERVER' in selected_environment_packages"
