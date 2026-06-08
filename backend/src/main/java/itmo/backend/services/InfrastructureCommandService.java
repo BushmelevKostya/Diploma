@@ -1,6 +1,9 @@
 package itmo.backend.services;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import itmo.backend.config.InfraProperties;
+import itmo.backend.model.dto.drift.VmConfigurationSnapshot;
 import itmo.backend.model.entity.VirtualMachine;
 
 import java.io.BufferedReader;
@@ -12,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +24,7 @@ import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,11 +35,13 @@ public class InfrastructureCommandService {
 
   private static final Logger log = LoggerFactory.getLogger(InfrastructureCommandService.class);
   private static final String GENERATED_TFVARS_RELATIVE_PATH = "tofu/generated/vms.auto.tfvars.json";
+  private static final Pattern CLOUD_INIT_HOSTNAME_PATTERN = Pattern.compile("(?m)^hostname:\\s*(\\S+)\\s*$");
   private static final String ANSIBLE_INVENTORY_RELATIVE_PATH = "ansible/inventory/hosts.yml";
   private static final String WSL_ANSIBLE_PRIVATE_KEY_PATH = "/tmp/diploma_ansible_id_rsa";
   private static final Pattern WINDOWS_ABSOLUTE_PATH = Pattern.compile("^([A-Za-z]):[\\\\/](.*)$");
 
   private final InfraProperties infraProperties;
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   public InfrastructureCommandService(final InfraProperties infraProperties) {
     this.infraProperties = infraProperties;
@@ -263,6 +270,491 @@ public class InfrastructureCommandService {
       "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh domstate %s"
         .formatted(infraProperties.getVirtualizationHost(), shellEscape(vmName)));
     return output == null ? "" : output.trim();
+  }
+
+  public VmConfigurationSnapshot resolveLibvirtVmConfiguration(final String vmName) {
+    if (!isEnabled()) {
+      return VmConfigurationSnapshot.notFound();
+    }
+
+    try {
+      final String output = runOnVirtualizationHostAndCapture(
+        "libvirt-config-" + vmName,
+        libvirtConfigurationScript(vmName)
+      );
+      final VmConfigurationSnapshot snapshot = parseConfigurationSnapshot(output);
+      if (snapshot.found()) {
+        log.info(
+          "Libvirt state read for VM {}: vcpu={}, memoryMb={}, diskSizeGb={}, status={}",
+          vmName,
+          snapshot.vcpu(),
+          snapshot.memoryMb(),
+          snapshot.diskSizeGb(),
+          snapshot.status()
+        );
+      } else {
+        log.warn("Libvirt domain not found or unreadable for VM {}", vmName);
+      }
+      return snapshot;
+    } catch (final Exception exception) {
+      log.warn("Failed to read libvirt configuration for VM {}: {}", vmName, exception.getMessage());
+      return VmConfigurationSnapshot.notFound();
+    }
+  }
+
+  private String libvirtConfigurationScript(final String vmName) {
+    return """
+      export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+      VM_NAME='%s'
+
+      if ! virsh dominfo "${VM_NAME}" >/dev/null 2>&1; then
+        echo '{"found":false}'
+        exit 0
+      fi
+
+      dominfo="$(virsh dominfo "${VM_NAME}")"
+      blklist="$(virsh domblklist "${VM_NAME}" --details)"
+      vcpu="$(awk -F: '/CPU\\(s\\)/ { gsub(/^[ \\t]+/, "", $2); print $2; exit }' <<< "${dominfo}")"
+      mem_kib="$(awk '/Max memory/ { print $3; exit }' <<< "${dominfo}")"
+      memory_mb=$((mem_kib / 1024))
+      status="$(tr '[:upper:]' '[:lower:]' <<< "$(virsh domstate "${VM_NAME}")" | tr -d '\\r\\n')"
+      disk_path="$(awk 'NR>2 && tolower($2)=="disk" && tolower($3)=="vda" {print $4; exit}' <<< "${blklist}")"
+
+      disk_gb=0
+      os_image="unknown"
+      backing=""
+
+      if [[ -n "${disk_path}" && -f "${disk_path}" ]]; then
+        if command -v jq >/dev/null 2>&1; then
+          img_json="$(qemu-img info --force-share --output=json "${disk_path}" 2>/dev/null || true)"
+          if [[ -n "${img_json}" ]]; then
+            virt_size="$(jq -r '."virtual-size" // 0' <<< "${img_json}")"
+            backing="$(jq -r '."backing-filename" // empty' <<< "${img_json}")"
+            if [[ "${virt_size}" =~ ^[0-9]+$ ]] && [[ "${virt_size}" -gt 0 ]]; then
+              disk_gb=$(( (virt_size + 1073741823) / 1073741824 ))
+            fi
+          fi
+        else
+          img_info="$(qemu-img info --force-share "${disk_path}" 2>/dev/null || true)"
+          if [[ -n "${img_info}" ]]; then
+            backing="$(awk -F: '/backing file/ { gsub(/^[ \\t]+/, "", $2); print $2; exit }' <<< "${img_info}")"
+            actual_line="$(awk -F: '/virtual size/ { print $2; exit }' <<< "${img_info}")"
+            if [[ "${actual_line}" =~ \\(([0-9]+)\\ bytes\\) ]]; then
+              bytes="${BASH_REMATCH[1]}"
+              disk_gb=$(( (bytes + 1073741823) / 1073741824 ))
+            fi
+          fi
+        fi
+      fi
+
+      case "${backing}" in
+        *alpine*) os_image="alpine_3_19" ;;
+        *ubuntu*) os_image="ubuntu_22_04" ;;
+      esac
+
+      if command -v jq >/dev/null 2>&1; then
+        jq -n \
+          --arg name "${VM_NAME}" \
+          --arg hostname "${VM_NAME}" \
+          --argjson vcpu "${vcpu:-0}" \
+          --argjson memoryMb "${memory_mb:-0}" \
+          --argjson diskSizeGb "${disk_gb:-0}" \
+          --arg osImage "${os_image}" \
+          --arg status "${status}" \
+          '{found: true, name: $name, hostname: $hostname, vcpu: $vcpu, memoryMb: $memoryMb, diskSizeGb: $diskSizeGb, osImage: $osImage, environmentPackages: [], status: $status}'
+      else
+        printf '{"found":true,"name":"%%s","hostname":"%%s","vcpu":%%s,"memoryMb":%%s,"diskSizeGb":%%s,"osImage":"%%s","environmentPackages":[],"status":"%%s"}' \
+          "${VM_NAME}" "${VM_NAME}" "${vcpu:-0}" "${memory_mb:-0}" "${disk_gb:-0}" "${os_image}" "${status}"
+      fi
+      """.formatted(shellEscape(vmName));
+  }
+
+  public VmConfigurationSnapshot resolveOpenTofuVmConfiguration(final String vmName) {
+    if (!isEnabled()) {
+      return VmConfigurationSnapshot.notFound();
+    }
+
+    final VmConfigurationSnapshot fromTfvars = resolveGeneratedTfvarsVmConfiguration(vmName);
+
+    try {
+      final String output = runAndCapture("opentofu-show-json-" + vmName, """
+        set -euo pipefail
+        %s
+        export TF_CLI_CONFIG_FILE='%s/tofu/tofu.rc'
+        cd '%s/tofu'
+        %s init -input=false >/dev/null
+        %s show -json
+        """.formatted(
+        openTofuEnvironmentPrologue(),
+        repoRootForShell(),
+        repoRootForShell(),
+        infraProperties.getTofuCommand(),
+        infraProperties.getTofuCommand()
+      ));
+      final VmConfigurationSnapshot fromState = parseOpenTofuShowJson(output, vmName);
+      if (fromState.found()) {
+        return fromState;
+      }
+    } catch (final Exception exception) {
+      log.warn("Failed to read OpenTofu state for VM {}: {}", vmName, exception.getMessage());
+    }
+
+    return fromTfvars.found() ? fromTfvars : VmConfigurationSnapshot.notFound();
+  }
+
+  public VmConfigurationSnapshot resolveGuestVmProfile(
+    final String vmName,
+    final String osImage,
+    final String ipAddress
+  ) {
+    if (!isEnabled()) {
+      return VmConfigurationSnapshot.notFound();
+    }
+
+    final String resolvedIp = resolveGuestIp(vmName, ipAddress);
+    if (resolvedIp == null || resolvedIp.isBlank() || "pending".equalsIgnoreCase(resolvedIp)) {
+      log.warn("Guest profile for VM {} skipped: IP address is unavailable", vmName);
+      return VmConfigurationSnapshot.notFound();
+    }
+
+    try {
+      ensureGuestSshKeyOnHypervisor();
+      final String sshUser = infraProperties.resolveSshUser(osImage);
+      log.info("Reading guest profile for VM {} via {}@{}", vmName, sshUser, resolvedIp);
+      final String content = runAndCapture(
+        "guest-profile-" + vmName,
+        """
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- \
+            ssh -i /tmp/id_rsa_vm_pem -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s@%s cat /etc/diploma-vm-info
+          """.formatted(
+          infraProperties.getVirtualizationHost(),
+          shellEscape(sshUser),
+          shellEscape(resolvedIp)
+        )
+      );
+      final VmConfigurationSnapshot snapshot = parseDiplomaVmInfo(content);
+      if (snapshot.found()) {
+        log.info(
+          "Guest profile read for VM {}: hostname={}, environmentPackages={}",
+          vmName,
+          snapshot.hostname(),
+          snapshot.environmentPackages()
+        );
+      } else {
+        log.warn("Guest profile not found for VM {} at {} (raw response: {})", vmName, resolvedIp, summarize(content));
+      }
+      return snapshot;
+    } catch (final Exception exception) {
+      log.warn("Failed to read guest profile for VM {}: {}", vmName, exception.getMessage());
+      return VmConfigurationSnapshot.notFound();
+    }
+  }
+
+  private VmConfigurationSnapshot parseDiplomaVmInfo(final String content) {
+    if (content == null || content.isBlank()) {
+      return VmConfigurationSnapshot.notFound();
+    }
+
+    String hostname = null;
+    final List<String> packages = new ArrayList<>();
+
+    for (final String rawLine : content.split("\\R")) {
+      final String line = rawLine == null ? "" : rawLine.replace("\uFEFF", "").trim();
+      if (line.startsWith("hostname=")) {
+        hostname = line.substring("hostname=".length()).trim();
+      }
+      if (line.startsWith("environment_packages=")) {
+        final String rawPackages = line.substring("environment_packages=".length()).trim();
+        if (!rawPackages.isBlank()) {
+          for (final String value : rawPackages.split(",")) {
+            final String packageName = value.trim();
+            if (!packageName.isBlank()) {
+              packages.add(packageName);
+            }
+          }
+        }
+      }
+    }
+
+    if (hostname == null && packages.isEmpty()) {
+      return VmConfigurationSnapshot.notFound();
+    }
+
+    final List<String> sortedPackages = packages.stream().sorted().toList();
+    return new VmConfigurationSnapshot(
+      true,
+      null,
+      hostname,
+      null,
+      null,
+      null,
+      null,
+      sortedPackages,
+      null
+    );
+  }
+
+  private void ensureGuestSshKeyOnHypervisor() {
+    try {
+      final String keySourcePath = windowsPathToWsl(infraProperties.getAnsiblePrivateKeyPath());
+      runInRepo("ensure-guest-ssh-key", """
+        scp -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no '%s' root@%s:/tmp/id_rsa_vm_pem
+        ssh -o BatchMode=yes -o ConnectTimeout=10 root@%s -- chmod 600 /tmp/id_rsa_vm_pem
+        """.formatted(
+        shellEscape(keySourcePath),
+        infraProperties.getVirtualizationHost(),
+        infraProperties.getVirtualizationHost()
+      ));
+    } catch (final Exception exception) {
+      log.warn("Could not install guest SSH key on virtualization host: {}", exception.getMessage());
+    }
+  }
+
+  private String resolveGuestIp(final String vmName, final String ipAddress) {
+    try {
+      final String output = runAndCapture("get-vm-ip-" + vmName, """
+        cd '%s'
+        sed 's/\\r$//' ./scripts/get-vm-ip.sh | bash -s -- '%s' '%s'
+        """.formatted(
+        repoRootForShell(),
+        shellEscape(vmName),
+        shellEscape(infraProperties.getVirtualizationHost())
+      ));
+      final String resolved = output == null ? "" : output.trim();
+      if (!resolved.isBlank() && !"pending".equalsIgnoreCase(resolved)) {
+        return resolved;
+      }
+    } catch (final Exception exception) {
+      log.warn("Failed to resolve guest IP for VM {} via libvirt: {}", vmName, exception.getMessage());
+    }
+
+    if (ipAddress != null && !ipAddress.isBlank() && !"pending".equalsIgnoreCase(ipAddress)) {
+      return ipAddress;
+    }
+
+    return null;
+  }
+
+  private VmConfigurationSnapshot resolveGeneratedTfvarsVmConfiguration(final String vmName) {
+    try {
+      final Path tfvarsPath = repoRoot().resolve(GENERATED_TFVARS_RELATIVE_PATH);
+      if (!Files.exists(tfvarsPath)) {
+        return VmConfigurationSnapshot.notFound();
+      }
+
+      final JsonNode root = objectMapper.readTree(Files.readString(tfvarsPath, StandardCharsets.UTF_8));
+      final JsonNode vmNode = root.path("vms").path(vmName);
+      if (vmNode.isMissingNode() || vmNode.isNull()) {
+        return VmConfigurationSnapshot.notFound();
+      }
+
+      return new VmConfigurationSnapshot(
+        true,
+        textValue(vmNode, "name", vmName),
+        textValue(vmNode, "hostname", vmName),
+        intValue(vmNode, "vcpu"),
+        intValue(vmNode, "memory_mb"),
+        intValue(vmNode, "disk_size_gb"),
+        infraProperties.normalizeOsImage(textValue(vmNode, "os_image", "unknown")),
+        List.of(),
+        null
+      );
+    } catch (final Exception exception) {
+      log.warn("Failed to read generated tfvars for VM {}: {}", vmName, exception.getMessage());
+      return VmConfigurationSnapshot.notFound();
+    }
+  }
+
+  private VmConfigurationSnapshot parseOpenTofuShowJson(final String output, final String vmName) {
+    try {
+      final JsonNode rootModule = objectMapper.readTree(output).path("values").path("root_module");
+      final String modulePrefix = "module.vms[\"" + vmName + "\"].";
+
+      final JsonNode domainValues = findResourceValuesByAddress(rootModule, modulePrefix + "libvirt_domain.vm");
+      final JsonNode diskValues = findResourceValuesByAddress(rootModule, modulePrefix + "libvirt_volume.disk");
+      final JsonNode cloudInitValues = findResourceValuesByAddress(rootModule, modulePrefix + "libvirt_cloudinit_disk.init");
+
+      if (domainValues.isMissingNode()) {
+        return VmConfigurationSnapshot.notFound();
+      }
+
+      final String hostname = parseHostnameFromUserData(textValue(cloudInitValues, "user_data", null));
+      final String backingPath = resolveBackingStorePath(diskValues);
+      final long diskCapacity = longValue(diskValues, "capacity");
+
+      log.info(
+        "OpenTofu state parsed for VM {}: vcpu={}, memoryMb={}, diskSizeGb={}, osImage={}",
+        vmName,
+        intValue(domainValues, "vcpu"),
+        memoryMbFromLibvirtKiB(longValue(domainValues, "memory")),
+        diskGbFromBytes(diskCapacity),
+        inferOsImageFromBackingPath(backingPath)
+      );
+
+      return new VmConfigurationSnapshot(
+        true,
+        textValue(domainValues, "name", vmName),
+        hostname == null ? textValue(domainValues, "name", vmName) : hostname,
+        intValue(domainValues, "vcpu"),
+        memoryMbFromLibvirtKiB(longValue(domainValues, "memory")),
+        diskGbFromBytes(diskCapacity),
+        inferOsImageFromBackingPath(backingPath),
+        List.of(),
+        null
+      );
+    } catch (final Exception exception) {
+      log.warn("Failed to parse OpenTofu show JSON for VM {}: {}", vmName, exception.getMessage());
+      return VmConfigurationSnapshot.notFound();
+    }
+  }
+
+  private VmConfigurationSnapshot parseConfigurationSnapshot(final String output) {
+    try {
+      final JsonNode root = objectMapper.readTree(output);
+      if (!root.path("found").asBoolean(false)) {
+        return VmConfigurationSnapshot.notFound();
+      }
+
+      return new VmConfigurationSnapshot(
+        true,
+        nullableText(root, "name"),
+        nullableText(root, "hostname"),
+        nullableInt(root, "vcpu"),
+        nullableInt(root, "memoryMb"),
+        nullableInt(root, "diskSizeGb"),
+        nullableText(root, "osImage"),
+        readStringList(root.path("environmentPackages")),
+        nullableText(root, "status")
+      );
+    } catch (final Exception exception) {
+      log.warn("Failed to parse VM configuration snapshot JSON: {}", exception.getMessage());
+      return VmConfigurationSnapshot.notFound();
+    }
+  }
+
+  private JsonNode findResourceValuesByAddress(final JsonNode module, final String targetAddress) {
+    for (final JsonNode resource : module.path("resources")) {
+      if (targetAddress.equals(resource.path("address").asText())) {
+        return resource.path("values");
+      }
+    }
+
+    for (final JsonNode child : module.path("child_modules")) {
+      final JsonNode found = findResourceValuesByAddress(child, targetAddress);
+      if (!found.isMissingNode()) {
+        return found;
+      }
+    }
+
+    return objectMapper.missingNode();
+  }
+
+  private String resolveBackingStorePath(final JsonNode diskValues) {
+    if (diskValues == null || diskValues.isMissingNode()) {
+      return null;
+    }
+
+    final String directPath = textValue(diskValues.path("backing_store"), "path", null);
+    if (directPath != null && !directPath.isBlank()) {
+      return directPath;
+    }
+
+    return textValue(diskValues, "backing_store", null);
+  }
+
+  private String parseHostnameFromUserData(final String userData) {
+    if (userData == null || userData.isBlank()) {
+      return null;
+    }
+
+    final Matcher matcher = CLOUD_INIT_HOSTNAME_PATTERN.matcher(userData);
+    return matcher.find() ? matcher.group(1) : null;
+  }
+
+  private String inferOsImageFromBackingPath(final String backingPath) {
+    if (backingPath == null || backingPath.isBlank()) {
+      return "unknown";
+    }
+
+    final String lower = backingPath.toLowerCase(Locale.ROOT);
+    if (lower.contains("alpine")) {
+      return "alpine_3_19";
+    }
+    if (lower.contains("ubuntu")) {
+      return "ubuntu_22_04";
+    }
+
+    return "unknown";
+  }
+
+  private int memoryMbFromLibvirtKiB(final long memoryKiB) {
+    if (memoryKiB <= 0) {
+      return 0;
+    }
+    return (int) (memoryKiB / 1024L);
+  }
+
+  private int diskGbFromBytes(final long capacityBytes) {
+    if (capacityBytes <= 0) {
+      return 0;
+    }
+    return (int) ((capacityBytes + 1_073_741_823L) / 1_073_741_824L);
+  }
+
+  private List<String> readStringList(final JsonNode node) {
+    if (node == null || !node.isArray()) {
+      return List.of();
+    }
+
+    return StreamSupport.stream(node.spliterator(), false)
+      .map(JsonNode::asText)
+      .filter(value -> value != null && !value.isBlank())
+      .sorted()
+      .toList();
+  }
+
+  private String textValue(final JsonNode node, final String field, final String fallback) {
+    if (node == null || node.isMissingNode() || node.isNull()) {
+      return fallback;
+    }
+
+    final JsonNode value = node.path(field);
+    return value.isMissingNode() || value.isNull() ? fallback : value.asText(fallback);
+  }
+
+  private String nullableText(final JsonNode node, final String field) {
+    if (node == null || node.isMissingNode() || node.isNull()) {
+      return null;
+    }
+
+    final JsonNode value = node.path(field);
+    return value.isMissingNode() || value.isNull() ? null : value.asText();
+  }
+
+  private Integer nullableInt(final JsonNode node, final String field) {
+    if (node == null || node.isMissingNode() || node.isNull()) {
+      return null;
+    }
+
+    final JsonNode value = node.path(field);
+    return value.isMissingNode() || value.isNull() ? null : value.asInt();
+  }
+
+  private int intValue(final JsonNode node, final String field) {
+    if (node == null || node.isMissingNode() || node.isNull()) {
+      return 0;
+    }
+
+    return node.path(field).asInt(0);
+  }
+
+  private long longValue(final JsonNode node, final String field) {
+    if (node == null || node.isMissingNode() || node.isNull()) {
+      return 0L;
+    }
+
+    return node.path(field).asLong(0L);
   }
 
   public void createExternalDiskSnapshot(final String vmName, final String snapshotName)
@@ -611,7 +1103,9 @@ public class InfrastructureCommandService {
           final String sanitizedLine = sanitizeText(line);
           collector.append(sanitizedLine).append(System.lineSeparator());
           if (errorStream) {
-            log.warn("infra[{}][stderr] {}", commandName, sanitizedLine);
+            log.warn("infra[{}][stderr] {}", commandName, summarize(sanitizedLine));
+          } else if (sanitizedLine.length() > 400) {
+            log.info("infra[{}][stdout] <{} bytes>", commandName, sanitizedLine.length());
           } else {
             log.info("infra[{}][stdout] {}", commandName, sanitizedLine);
           }
