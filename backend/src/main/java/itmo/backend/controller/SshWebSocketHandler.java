@@ -176,9 +176,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             throw new IllegalStateException("No valid SSH private keys were loaded. Check infra.virtualization-private-key-path and infra.ansible-private-key-path");
         }
 
-        final String virtHost = infraProperties.getVirtualizationHost();
-        final String virtUser = infraProperties.getVirtualizationUser();
-        final String vmUser = infraProperties.getVmSshUser();
+      final String virtHost = infraProperties.getVirtualizationHost();
+      final String virtUser = infraProperties.getVirtualizationUser();
+      final String vmUser = infraProperties.resolveSshUser(vm.getOsImage());
 
         final Session jumpSession = jsch.getSession(virtUser, virtHost, 22);
         jumpSession.setConfig("StrictHostKeyChecking", "no");
