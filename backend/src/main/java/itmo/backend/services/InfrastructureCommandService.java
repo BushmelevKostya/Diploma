@@ -283,14 +283,15 @@ public class InfrastructureCommandService {
   public void restoreExternalDiskSnapshot(final String vmName, final String snapshotName)
     throws IOException, InterruptedException {
     log.info("Restoring VM {} from external disk-only snapshot {}", vmName, snapshotName);
-    String command = String.format(
-      "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 root@%s -- virsh snapshot-revert %s %s --force",
-      infraProperties.getVirtualizationHost(),
+    runInRepo("snapshot-restore-" + vmName + "-" + snapshotName, """
+      cd '%s'
+      bash ./scripts/restore-snapshot.sh '%s' '%s' '%s'
+      """.formatted(
+      repoRootForShell(),
       shellEscape(vmName),
-      shellEscape(snapshotName)
-    );
-
-    runInRepo("virsh-snapshot-restore-" + vmName + "-" + snapshotName, command);
+      shellEscape(snapshotName),
+      shellEscape(infraProperties.getVirtualizationHost())
+    ));
   }
 
   public void deleteSnapshotMetadata(final String vmName, final String snapshotName)
@@ -314,6 +315,23 @@ public class InfrastructureCommandService {
       );
     log.info("monitoring/remote script length={} bytes", remoteCommand.getBytes(StandardCharsets.UTF_8).length);
     return runAndCaptureWithStdin(commandName, sshCommand, remoteCommand);
+  }
+
+  public void runOnVirtualizationHost(final String commandName, final String remoteCommand)
+    throws IOException, InterruptedException {
+    final String sshCommand = "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 %s@%s -- bash -s"
+      .formatted(
+        shellEscape(infraProperties.getVirtualizationUser()),
+        infraProperties.getVirtualizationHost()
+      );
+    log.info("infra/remote script length={} bytes", remoteCommand.getBytes(StandardCharsets.UTF_8).length);
+    final CommandResult result = executeWithStdin(commandName, sshCommand, remoteCommand);
+    if (result.exitCode() != 0) {
+      log.error("Infrastructure command {} failed with exit code {}. stderr: {}",
+        commandName, result.exitCode(), summarize(result.stderr()));
+      throw new IOException(("Command failed with exit code " + result.exitCode()
+        + "\n" + result.stdout() + "\n" + result.stderr()).trim());
+    }
   }
 
   private String runAndCaptureWithStdin(final String commandName, final String command, final String stdinContent)
