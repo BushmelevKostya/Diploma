@@ -5,6 +5,7 @@ import itmo.backend.model.dto.drift.DriftReportResponse;
 import itmo.backend.model.dto.drift.DriftStatus;
 import itmo.backend.model.dto.drift.PageDriftReportResponse;
 import itmo.backend.model.dto.drift.PageInfo;
+import itmo.backend.model.dto.drift.VmConfigurationSnapshot;
 import itmo.backend.model.dto.vm.EnvironmentPackage;
 import itmo.backend.model.entity.VirtualMachine;
 import itmo.backend.model.entity.VmStatus;
@@ -13,16 +14,21 @@ import itmo.backend.model.repository.VirtualMachineRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
 public class DriftService {
+
+  private static final Logger log = LoggerFactory.getLogger(DriftService.class);
 
   private final VirtualMachineRepository virtualMachineRepository;
   private final InfrastructureCommandService infrastructureCommandService;
@@ -56,6 +62,18 @@ public class DriftService {
     );
 
     reports.put(record.id(), record);
+    log.info(
+      "Drift report for VM {}: status={}, differences={}",
+      vm.getName(),
+      status,
+      differences.size()
+    );
+    if (!differences.isEmpty()) {
+      differences.forEach(difference ->
+        log.info("Drift diff for VM {}: {} expected={} actual={}",
+          vm.getName(), difference.field(), difference.expected(), difference.actual())
+      );
+    }
     return toResponse(record);
   }
 
@@ -111,30 +129,133 @@ public class DriftService {
 
   private Map<String, Object> expectedState(final VirtualMachine vm) {
     final VmStatus desiredStatus = vm.getDesiredStatus() == null ? VmStatus.RUNNING : vm.getDesiredStatus();
-    return Map.of(
-      "name", vm.getName(),
-      "hostname", vm.getHostname(),
-      "vcpu", vm.getVcpu(),
-      "memoryMb", vm.getMemoryMb(),
-      "diskSizeGb", vm.getDiskSizeGb(),
-      "osImage", vm.getOsImage(),
-      "environmentPackages", environmentPackagesValue(vm.getEnvironmentPackages()),
-      "status", desiredStatus.name()
+    final VmConfigurationSnapshot openTofuState = infrastructureCommandService.resolveOpenTofuVmConfiguration(vm.getName());
+
+    if (openTofuState.found()) {
+      return stateMap(
+        firstNonBlank(openTofuState.name(), vm.getName()),
+        firstNonBlank(openTofuState.hostname(), vm.getHostname()),
+        firstNonNull(openTofuState.vcpu(), vm.getVcpu()),
+        firstNonNull(openTofuState.memoryMb(), vm.getMemoryMb()),
+        firstNonNull(openTofuState.diskSizeGb(), vm.getDiskSizeGb()),
+        firstNonBlank(openTofuState.osImage(), vm.getOsImage()),
+        environmentPackagesValue(vm.getEnvironmentPackages()),
+        desiredStatus.name()
+      );
+    }
+
+    return stateMap(
+      vm.getName(),
+      vm.getHostname(),
+      vm.getVcpu(),
+      vm.getMemoryMb(),
+      vm.getDiskSizeGb(),
+      vm.getOsImage(),
+      environmentPackagesValue(vm.getEnvironmentPackages()),
+      desiredStatus.name()
     );
   }
 
   private Map<String, Object> actualState(final VirtualMachine vm) {
-    final String actualStatus = resolveActualStatus(vm);
-    return Map.of(
-      "name", vm.getName(),
-      "hostname", vm.getHostname(),
-      "vcpu", vm.getVcpu(),
-      "memoryMb", vm.getMemoryMb(),
-      "diskSizeGb", vm.getDiskSizeGb(),
-      "osImage", vm.getOsImage(),
-      "environmentPackages", environmentPackagesValue(vm.getEnvironmentPackages()),
-      "status", actualStatus
+    if (!infrastructureCommandService.isEnabled()) {
+      return databaseActualState(vm);
+    }
+
+    final VmConfigurationSnapshot libvirtState = infrastructureCommandService.resolveLibvirtVmConfiguration(vm.getName());
+    if (!libvirtState.found()) {
+      log.warn(
+        "Libvirt configuration not found for VM {}, using unavailable infrastructure marker instead of database fallback",
+        vm.getName()
+      );
+      return unavailableInfrastructureState(vm);
+    }
+
+    final VmConfigurationSnapshot guestProfile = infrastructureCommandService.resolveGuestVmProfile(
+      vm.getName(),
+      firstNonBlank(libvirtState.osImage(), vm.getOsImage()),
+      vm.getIpAddress()
     );
+
+    final String hostname = guestProfile.found() && guestProfile.hostname() != null && !guestProfile.hostname().isBlank()
+      ? guestProfile.hostname()
+      : firstNonBlank(libvirtState.hostname(), vm.getHostname());
+
+    final List<String> environmentPackages = guestProfile.found()
+      ? guestProfile.environmentPackages()
+      : List.of();
+
+    return stateMap(
+      firstNonBlank(libvirtState.name(), vm.getName()),
+      hostname,
+      firstNonNull(libvirtState.vcpu(), vm.getVcpu()),
+      firstNonNull(libvirtState.memoryMb(), vm.getMemoryMb()),
+      firstNonNull(libvirtState.diskSizeGb(), vm.getDiskSizeGb()),
+      firstNonBlank(libvirtState.osImage(), vm.getOsImage()),
+      environmentPackages,
+      mapDomStateToVmStatus(libvirtState.status()).name()
+    );
+  }
+
+  private Map<String, Object> databaseActualState(final VirtualMachine vm) {
+    return stateMap(
+      vm.getName(),
+      vm.getHostname(),
+      vm.getVcpu(),
+      vm.getMemoryMb(),
+      vm.getDiskSizeGb(),
+      vm.getOsImage(),
+      environmentPackagesValue(vm.getEnvironmentPackages()),
+      vm.getStatus().name()
+    );
+  }
+
+  private Map<String, Object> unavailableInfrastructureState(final VirtualMachine vm) {
+    final VmConfigurationSnapshot guestProfile = infrastructureCommandService.resolveGuestVmProfile(
+      vm.getName(),
+      vm.getOsImage(),
+      vm.getIpAddress()
+    );
+
+    final List<String> environmentPackages = guestProfile.found()
+      ? guestProfile.environmentPackages()
+      : List.of();
+
+    final String hostname = guestProfile.found() && guestProfile.hostname() != null && !guestProfile.hostname().isBlank()
+      ? guestProfile.hostname()
+      : vm.getHostname();
+
+    return stateMap(
+      vm.getName(),
+      hostname,
+      0,
+      0,
+      0,
+      "unknown",
+      environmentPackages,
+      VmStatus.ERROR.name()
+    );
+  }
+
+  private Map<String, Object> stateMap(
+    final String name,
+    final String hostname,
+    final int vcpu,
+    final int memoryMb,
+    final int diskSizeGb,
+    final String osImage,
+    final List<String> environmentPackages,
+    final String status
+  ) {
+    final Map<String, Object> state = new LinkedHashMap<>();
+    state.put("name", name);
+    state.put("hostname", hostname);
+    state.put("vcpu", vcpu);
+    state.put("memoryMb", memoryMb);
+    state.put("diskSizeGb", diskSizeGb);
+    state.put("osImage", osImage);
+    state.put("environmentPackages", environmentPackages);
+    state.put("status", status);
+    return state;
   }
 
   private List<String> environmentPackagesValue(final List<EnvironmentPackage> environmentPackages) {
@@ -142,19 +263,6 @@ public class DriftService {
       .map(EnvironmentPackage::name)
       .sorted()
       .toList();
-  }
-
-  private String resolveActualStatus(final VirtualMachine vm) {
-    if (!infrastructureCommandService.isEnabled()) {
-      return vm.getStatus().name();
-    }
-
-    try {
-      final String domState = infrastructureCommandService.resolveVmPowerState(vm.getName());
-      return mapDomStateToVmStatus(domState).name();
-    } catch (final Exception exception) {
-      return vm.getStatus().name();
-    }
   }
 
   private VmStatus mapDomStateToVmStatus(final String domStateRaw) {
@@ -181,11 +289,34 @@ public class DriftService {
     for (final String key : expectedState.keySet()) {
       final Object expected = expectedState.get(key);
       final Object actual = actualState.get(key);
-      if (!String.valueOf(expected).equals(String.valueOf(actual))) {
-        differences.add(new DriftDifference(key, String.valueOf(expected), String.valueOf(actual)));
+      if (!normalizeValue(expected).equals(normalizeValue(actual))) {
+        differences.add(new DriftDifference(key, normalizeValue(expected), normalizeValue(actual)));
       }
     }
     return differences;
+  }
+
+  private String normalizeValue(final Object value) {
+    if (value instanceof final List<?> list) {
+      return list.stream()
+        .map(String::valueOf)
+        .sorted()
+        .toList()
+        .toString();
+    }
+
+    return String.valueOf(value);
+  }
+
+  private String firstNonBlank(final String preferred, final String fallback) {
+    if (preferred != null && !preferred.isBlank()) {
+      return preferred;
+    }
+    return fallback;
+  }
+
+  private int firstNonNull(final Integer preferred, final int fallback) {
+    return preferred == null ? fallback : preferred;
   }
 
   private record DriftRecord(
